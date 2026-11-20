@@ -14,7 +14,13 @@ import datetime
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
-from app.services.matching.contracts import SOURCE_ARCHIVE, candidates_from_rows
+from app.services.matching.contracts import (
+    SOURCE_ARCHIVE,
+    STATUS_ERROR,
+    STATUS_HIT,
+    STATUS_MISS,
+    candidates_from_rows,
+)
 from app.services.matching.gates import ARCHIVE_DISABLED, BGM_UNAVAILABLE
 from app.services.matching.steps.base import (
     MatchStepBase,
@@ -109,7 +115,7 @@ class ArchiveShortcutStep(MatchStepBase):
             logger.warning(f"archive 短路异常（降级到 API）: {e}")
             ctx.archive_hit = False
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason=f"archive 短路异常: {e}",
                 inputs=inputs,
                 outputs={"subject_id": "", "error": str(e)},
@@ -125,7 +131,7 @@ class ArchiveShortcutStep(MatchStepBase):
             # archive 未命中：重置 archive_hit（APISearchStep 据此判定命中来源）
             ctx.archive_hit = False
             return StepOutcome(
-                status="miss",
+                status=STATUS_MISS,
                 reason=f"archive 短路未命中: {shortcut.reason}",
                 inputs=inputs,
                 outputs={"subject_id": "", "total_candidates": 0},
@@ -209,7 +215,7 @@ class ArchiveShortcutStep(MatchStepBase):
             candidates = candidates_from_rows(data, source=SOURCE_ARCHIVE, limit=15)
 
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=str(first.get("id", "")),
             reason=f"archive 短路命中: {shortcut.match_method}",
             candidates=candidates,

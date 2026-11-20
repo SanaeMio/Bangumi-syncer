@@ -312,6 +312,104 @@ class TestFTS5Index:
 # ===== 失效与重建 =====
 
 
+class TestFuzzyCandidateRanking:
+    """模糊 OR 预筛的截断必须按相关度，而不是 rowid 顺序"""
+
+    def test_score_alias_ignores_substring_short_circuit(self) -> None:
+        """别名不享受「子串直接满分」：短别名不是查询的一部分
+
+        L2-S8-071：查询 ``A Christmas Cwrol``（原题单字符 typo）时，候选
+        ``Рождество`` 的别名 ``christmas`` 是查询子串，旧实现判 100 分压过
+        真正候选的 93.3，直接错标成另一部作品。
+        """
+        from app.utils.bangumi_archive._fts_query import _score_alias
+
+        assert _score_alias("achristmascarol", "achristmascarol") == 100.0
+        assert _score_alias("achristmascwrol", "achristmascarol") > 90.0
+        # 子串关系仍在，但覆盖度只有 9/16，整体相似度 75 分 → 低于阈值 80
+        assert _score_alias("achristmascwrol", "christmas") < 80.0
+
+    def test_high_id_true_candidate_survives_truncation(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """候选预算被噪声吃满时，高 id 的真实候选仍要出现在预筛结果里
+
+        600 条噪声标题（含公共 trigram ``the`` 的 id 靠前条目）先占满
+        ``LIMIT 500``；旧实现按 rowid 顺序截断，id 最大的真实候选永远拿不到，
+        表现为长英文标题的单字符 typo 查不到（L2-S8 当时 9 条）。
+        """
+        db_path = tmp_path / "rank.db"
+        _create_test_db(db_path)
+        conn = sqlite3.connect(str(db_path))
+        conn.executemany(
+            "INSERT INTO subject (id, type, name, name_cn, infobox, date) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                (100 + i, 2, f"The Noise Show {i}", "", "", "2020-01-01")
+                for i in range(600)
+            ),
+        )
+        conn.execute(
+            "INSERT INTO subject (id, type, name, name_cn, infobox, date) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (9999, 2, "The Dot and the Line", "线恋点", "", "1965-12-31"),
+        )
+        conn.commit()
+        conn.close()
+
+        index = ArchiveTitleIndex()
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
+            lambda: db_path,
+        )
+        assert index._ensure_built() is True
+        conn = index._ensure_conn()
+        assert conn is not None
+
+        ids = index._collect_candidates_fts(conn, "thedonandtheline", fuzzy=True)
+        assert 9999 in ids
+
+    def test_alias_noise_does_not_outrank_true_title(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """短别名子串命中不得压过整体更像的真实标题（L2-S8-071 的单元版）"""
+        db_path = tmp_path / "alias.db"
+        _create_test_db(db_path)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO subject (id, type, name, name_cn, infobox, date) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (20, 2, "A Christmas Carol", "圣诞颂歌", "", "1971-12-21"),
+        )
+        conn.execute(
+            "INSERT INTO subject (id, type, name, name_cn, infobox, date) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                21,
+                2,
+                "Рождество",
+                "圣诞传说",
+                "{{Infobox|别名=* christmas\n* rozhdestvo}}",
+                "",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        index = ArchiveTitleIndex()
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
+            lambda: db_path,
+        )
+        assert index._ensure_built() is True
+        # 关掉 BK-tree，强制走 trigram OR 兜底路径
+        index.set_bktree_enabled(False)
+
+        hits = index.find_subject_ids_fuzzy("A Christmas Cwrol")
+        assert hits, "真实候选应被召回"
+        assert hits[0][0] == 20
+
+
 class TestInvalidateAndRebuild:
     def test_invalidate_clears_index(self, title_index_with_db) -> None:
         index, _ = title_index_with_db

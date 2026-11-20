@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import STATUS_HIT, STATUS_LOW_CONFIDENCE
 from app.services.matching.result import MatchResult
 from app.services.matching.steps.base import (
     MatchStepBase,
@@ -61,7 +62,7 @@ class MatchPipeline:
         trace.record_step(effective_stage, outcome)
 
         # 命中时更新 final_*（low_confidence 不设 final_subject_id）
-        if outcome.status == "hit" and outcome.subject_id:
+        if outcome.status == STATUS_HIT and outcome.subject_id:
             trace.final_subject_id = outcome.subject_id
             # final_match_method 优先级：stage_override > ctx.match_stage > stage
             trace.final_match_method = (
@@ -73,7 +74,7 @@ class MatchPipeline:
             # （优先取 bgm_search step 写入的 matched_variant_method，archive 命中时为 exact）
             if ctx.match_method_detail:
                 trace.final_match_method_detail = ctx.match_method_detail
-        elif outcome.status == "low_confidence":
+        elif outcome.status == STATUS_LOW_CONFIDENCE:
             # 低置信度沉淀：final_subject_id 保持 None，只记 score + method
             trace.final_match_method = ctx.match_stage or stage
             if outcome.score is not None:

@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.config import config_manager
+from ..core.config import config_manager, to_bool
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
     is_sensitive_ini_field,
@@ -205,12 +205,8 @@ async def get_scheduler_status(
 
 
 def _truthy(value: Any) -> bool:
-    """宽松布尔解析：实际 bool 或字符串 true/1/yes/on/enabled（任意大小写）。"""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    return str(value).strip().lower() in ("true", "1", "yes", "on", "enabled")
+    """宽松布尔解析：实现统一在 ``app.core.config.to_bool``（单一来源）。"""
+    return to_bool(value)
 
 
 def _llm_match_assist_will_be_enabled(data: dict) -> bool:

@@ -11,7 +11,7 @@ Bangumi 账号统一访问层（全列表化重构的核心）。
 
 from typing import Any
 
-from .config import config_manager, parse_media_server_username_value
+from .config import config_manager, parse_media_server_username_value, to_bool
 from .database import database_manager
 
 _BANGUMI_SECTION = "bangumi"
@@ -31,17 +31,6 @@ def _to_int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def _to_bool(value) -> bool:
-    """规范化 private 字段为 bool（兼容 INI 字符串与 DB 0/1）。"""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return False
 
 
 def _collect_ini_accounts() -> list[dict]:
@@ -122,7 +111,7 @@ def _cfg_to_account(section_name: str, cfg: dict) -> dict:
         "bangumi_user_id": _to_str(cfg.get("bangumi_user_id")),
         "nickname": _to_str(cfg.get("nickname")),
         "avatar": _to_str(cfg.get("avatar")),
-        "private": _to_bool(cfg.get("private")),
+        "private": to_bool(cfg.get("private")),
         "is_primary": False,
         # enabled 与 is_primary 职责分离：enabled 控制是否参与任务同步，
         # 有效账户默认为启用，可手动停用（停用后不被同步枚举命中）
@@ -271,7 +260,7 @@ def _account_to_cfg(account: dict | None) -> dict[str, Any] | None:
         "bangumi_user_id": account.get("bangumi_user_id", ""),
         "nickname": account.get("nickname", ""),
         "avatar": account.get("avatar", ""),
-        "private": _to_bool(account.get("private")),
+        "private": to_bool(account.get("private")),
     }
 
 

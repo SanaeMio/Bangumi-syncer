@@ -11,6 +11,9 @@ from app.core.logging import logger
 from app.services.matching.context import MatchContext
 from app.services.matching.contracts import (
     SOURCE_BANGUMI_DATA,
+    STATUS_ERROR,
+    STATUS_HIT,
+    STATUS_MISS,
     SubjectRef,
     make_candidate,
 )
@@ -101,7 +104,7 @@ class BangumiDataStep(MatchStepBase):
                     else "bangumi-data 无匹配结果"
                 )
                 return StepOutcome(
-                    status="miss",
+                    status=STATUS_MISS,
                     reason=reason,
                     inputs=inputs,
                     outputs={
@@ -126,7 +129,7 @@ class BangumiDataStep(MatchStepBase):
                     "不予采信，降级为候选交给后续步骤兜底"
                 )
                 return StepOutcome(
-                    status="miss",
+                    status=STATUS_MISS,
                     reason=(
                         f"bangumi-data 命中 {matched_title}({bangumi_data_id}) 但日期差 "
                         f"{guard_diff} 天 > {DATE_GUARD_REJECT_DAYS} 天，不予采信"
@@ -167,7 +170,7 @@ class BangumiDataStep(MatchStepBase):
             if guard_diff is not None:
                 outputs["date_diff_days"] = guard_diff
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=bangumi_data_id,
                 reason=(
                     f"bangumi-data 匹配命中：{matched_title}，"
@@ -188,7 +191,7 @@ class BangumiDataStep(MatchStepBase):
             from app.services.sync_service import _build_error_detail
 
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason=f"bangumi-data 匹配异常：{e}",
                 inputs=inputs,
                 error_detail=_build_error_detail(e),
@@ -257,7 +260,7 @@ class BangumiDataStep(MatchStepBase):
             score=1.0,
         )
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=match.subject_id,
             reason=(
                 f"bangumi-data 集级起点命中：{match.title}，"

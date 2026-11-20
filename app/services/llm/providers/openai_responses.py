@@ -17,7 +17,6 @@ _build_request / stream 内：
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,7 +32,11 @@ from app.services.llm.models import (
     ToolUseBlock,
     Usage,
 )
-from app.services.llm.providers.base import BaseProvider, open_stream_response
+from app.services.llm.providers.base import (
+    REASONING_MODEL_RE,
+    BaseProvider,
+    open_stream_response,
+)
 from app.services.llm.sse import SSEEvent, iter_sse_events
 
 
@@ -305,12 +308,11 @@ class OpenAIResponsesProvider(BaseProvider):
     def _reasoning_effort(self, level: str, model: str) -> str | None:
         """thinking_level → reasoning.effort；off/不支持时返回 None（不传字段）。
 
-        与 openai_compat 保持一致：用 ^o\\d 而非 startswith("o")，避免
-        "ollama/…"、"openrouter/…" 等第三方网关模型名误中。
+        模型判定与 openai_compat 共用 base.REASONING_MODEL_RE（理由见那里）。
         """
         if level == "off":
             return None
-        if not re.match(r"^o\d", model):
+        if not REASONING_MODEL_RE.match(model):
             logger.debug(
                 f"model {model} 非 o 系列不支持 reasoning.effort，"
                 f"已忽略 thinking_level={level}"

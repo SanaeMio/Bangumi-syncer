@@ -3,8 +3,8 @@
 源自 docs/design/评分体系统一设计.md §14 的 Archive 真实数据调研：原
 `_strip_season_episode_suffix` 只覆盖季数/集数，未覆盖续篇维度，导致
 「向阳素描 特别篇」永远回退不到「向阳素描」。2026-08-15 将 `_strip_part_suffix`
-合并进 `_strip_season_episode_suffix`（单循环遍历 `_SEASON_EPISODE_PATTERNS` +
-`_PART_SUFFIX_PATTERNS`），本文件锁住：
+合并进 `_strip_season_episode_suffix`（单循环遍历 season_suffix 的 caller_title
+profile + `_PART_SUFFIX_PATTERNS`），本文件锁住：
 
 - `_strip_season_episode_suffix` 对各类尾部标记（季/续篇、JP/CN、简/繁、带/不带空格）的剥离行为
 - `build_search_variants` 生成的候选池包含 part 剥离后的核心标题
@@ -74,7 +74,7 @@ def test_strip_no_match_unchanged():
     assert _strip_season_episode_suffix("完美世界") == "完美世界"
     assert _strip_season_episode_suffix("") == ""
     # 注：「凡人修仙传 第十期」属季数维度（第N期），合并后由
-    # `_SEASON_EPISODE_PATTERNS` 正确剥离为「凡人修仙传」，见下条 season 断言。
+    # season_suffix 的 caller_title profile 正确剥离为「凡人修仙传」，见下条 season 断言。
 
 
 def test_season_strip_still_preferred():

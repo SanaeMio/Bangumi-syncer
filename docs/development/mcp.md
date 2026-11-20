@@ -34,7 +34,7 @@ tests/
 ├── test_mcp_embed.py       # FastMCP 嵌入 FastAPI 测试
 ├── test_mcp_integration.py # 端到端集成测试
 ├── test_mcp_assembly.py    # 装配唯一性与 provider 同一性断言
-├── test_mcp_key_paths.py   # RSA 默认 data/ 路径、env 覆盖、父目录创建 + 0600
+├── test_mcp_key_paths.py   # RSA 默认 data/ 路径、env 覆盖、父目录创建 + 私钥权限收紧
 └── test_main_mcp.py        # main.py MCP 集成测试
 ```
 
@@ -179,6 +179,13 @@ JWT claims：
 | 公钥 | `data/mcp_public.pem` | 本地生成，用于验签 JWT（相对 cwd） |
 
 默认路径相对进程启动时的工作目录（cwd）解析，位于项目 `data/` 目录；Docker 镜像内即 `/app/data`（Dockerfile 已预建该目录）。路径可通过环境变量 `MCP_RSA_PRIVATE_KEY` / `MCP_RSA_PUBLIC_KEY` 配置。
+
+### 私钥文件权限
+
+私钥落盘后立即按 `0600`（仅属主可读写）收紧，每次加载还会尝试修正：
+
+- **POSIX**：`0600` 语义完整。回读到其他权限时记一条 warning 并 chmod 修正。
+- **Windows**：`os.chmod` 只映射「只读」位，`stat` 不反映 NTFS ACL，无法表达 `0600`。因此仍调用 chmod 保证属主可写，但**不做位校验**——否则每次启动都会刷一条永远修不好的 warning。该平台的私钥保护由 `data/` 目录隔离与 NTFS 继承 ACL 承担；多用户共用磁盘时应自行收紧目录 ACL。
 
 ::: warning 建议挂载 `data/` 以持久化密钥
 密钥默认写入项目 `data/` 目录，但**容器未挂载该目录时**，容器重建仍会导致密钥丢失：已签发的 Access Token（有效期 1 小时）将验签失败，客户端需重新授权。生产部署应将宿主机目录挂载到容器 `/app/data`（或把 `MCP_RSA_PRIVATE_KEY` / `MCP_RSA_PUBLIC_KEY` 指向持久卷）；多实例部署还需各实例共享同一密钥。

@@ -28,6 +28,7 @@ from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
 from app.core.public_url import get_public_base_path
+from tests.mcp_helpers import assert_private_key_owner_only
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -156,7 +157,7 @@ class TestRSAKeyManager:
         # 私钥必须逐字节保持不变（不得静默重新生成）。
         assert private_path.read_bytes() == private_pem
         # 私钥文件保持仅属主权限。
-        assert (private_path.stat().st_mode & 0o777) == 0o600
+        assert_private_key_owner_only(private_path)
 
         # 公钥由已存在的私钥重新派生。
         assert public_path.exists()
@@ -195,7 +196,7 @@ class TestRSAKeyManager:
         assert private_path.exists()
         assert public_path.exists()
         assert private_path.read_bytes() != b""
-        assert (private_path.stat().st_mode & 0o777) == 0o600
+        assert_private_key_owner_only(private_path)
         # 公钥现在必须匹配新生成的私钥，而不是陈旧的那把。
         assert public_path.read_bytes() != stale_public_pem
 

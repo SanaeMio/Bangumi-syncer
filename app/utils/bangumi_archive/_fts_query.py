@@ -31,9 +31,11 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Optional
 
+from rapidfuzz import fuzz
 from rapidfuzz.distance import DamerauLevenshtein, JaroWinkler
 
 from ...core.logging import logger
+from ..infobox import ALIAS_KEYS, iter_infobox_aliases
 from ..title_patterns import YEAR_RE, extract_year
 from ._title_normalize import (
     ARCHIVE_FUZZY_THRESHOLD,
@@ -43,12 +45,9 @@ from ._title_normalize import (
     strip_numeral_variant,
     strip_year_suffix,
 )
-from ._wiki_parser import parse_infobox
 
-# infobox 中视为别名的 key（与原 _title_index.py 保持一致）
-_ALIAS_KEYS = frozenset(
-    {"别名", "alias", "aliases", "中文名", "英文名", "罗马音", "假名"}
-)
+# 别名 key 集合与抽取实现统一在 app.utils.infobox（archive 索引要扩大召回，
+# 故传 ALIAS_KEYS；匹配打分层只认「别名」，两处差异是显式参数）
 
 # 模糊查询候选集上限（与原 _CANDIDATE_LIMIT 一致）
 _CANDIDATE_LIMIT = 200
@@ -150,6 +149,24 @@ def _score_candidate(query: str, candidate: str) -> float:
     )
 
 
+def _score_alias(query: str, alias: str) -> float:
+    """别名相似度（0~100）：只认整体相似度，不做子串/partial 抬升。
+
+    别名是条目的**完整**别称，不是查询的一个片段。沿用标题那条
+    「子串直接满分 + partial×0.9」会给短别名开侧门：查询
+    ``achristmascwrol``（``A Christmas Carol`` 单字符 typo）与某条目别名
+    ``christmas`` 判 100 分，压过真正候选的 93.3，于是错标成另一部作品
+    （L2-S8-071 实测）。别名只认 ratio 反而召回更高
+    （``research/matching-pipeline/eval_alias_scoring.py``：94.5% vs 92.5%），
+    因为满分噪声会把真候选挤出 ``limit`` 截断。
+    """
+    if not query or not alias:
+        return 0.0
+    if query == alias:
+        return 100.0
+    return fuzz.ratio(query, alias)
+
+
 def _extract_alias_text(infobox_raw: Any) -> str:
     """从 infobox 解析别名，归一化后用空格拼接为单个字符串
 
@@ -158,21 +175,9 @@ def _extract_alias_text(infobox_raw: Any) -> str:
     """
     if not isinstance(infobox_raw, str) or not infobox_raw:
         return ""
-    parsed = parse_infobox(infobox_raw)
-    aliases: list[str] = []
-    for item in parsed:
-        key_lower = str(item.get("key", "")).strip().lower()
-        if key_lower not in _ALIAS_KEYS:
-            continue
-        value = item.get("value")
-        if isinstance(value, list):
-            for v in value:
-                text = v.get("v") if isinstance(v, dict) else v
-                if isinstance(text, str) and text.strip():
-                    aliases.append(_normalize_key(text))
-        elif isinstance(value, str) and value.strip():
-            aliases.append(_normalize_key(value))
-    return " ".join(aliases)
+    return " ".join(
+        _normalize_key(text) for text in iter_infobox_aliases(infobox_raw, ALIAS_KEYS)
+    )
 
 
 def _year_of(date_str: Any) -> Optional[int]:
@@ -865,7 +870,7 @@ class ArchiveFTSQuery:
                         for alias_key in alias_text.split():
                             if not alias_key:
                                 continue
-                            score = _score_candidate(key, alias_key)
+                            score = _score_alias(key, alias_key)
                             if score > best_score:
                                 best_score = score
                 if best_score < threshold:
@@ -913,14 +918,23 @@ class ArchiveFTSQuery:
                     trigrams = [query[i : i + 3] for i in range(len(query) - 2)]
                     expr = " OR ".join(trigrams)
                     limit = 500  # 模糊预筛上限，外层再截断到 _CANDIDATE_LIMIT
+                    # 必须按 bm25 相关度排序而不是默认的 rowid 顺序：
+                    # OR 表达式里只要有一个高频 trigram（三字标题常见的
+                    # "the"/"and"），命中数就上万，直接 LIMIT 500 拿到的是
+                    # 「id 最小的 500 条」——真实候选（通常 id 靠后）被截掉，
+                    # 表现为长英文标题的单字符 typo 查不到（L2-S8 实测 9 条）。
+                    # 排序后打分仍是全候选遍历，因此只影响截断取舍，
+                    # 不改变既有命中的排序语义（实测最坏 31ms @ 1.1 万命中）。
+                    order = " ORDER BY rank"
                 else:
                     # 精确查询：phrase MATCH（所有 trigram 按序匹配）
                     expr = query
                     limit = 2000  # 精确预筛上限，覆盖同名条目场景
+                    order = ""
                 rows = conn.execute(
                     f"SELECT rowid FROM subject_fts "
-                    f"WHERE name MATCH ? OR name_cn MATCH ? OR aliases MATCH ? "
-                    f"LIMIT {limit}",
+                    f"WHERE name MATCH ? OR name_cn MATCH ? OR aliases MATCH ?"
+                    f"{order} LIMIT {limit}",
                     (expr,) * 3,
                 ).fetchall()
             else:

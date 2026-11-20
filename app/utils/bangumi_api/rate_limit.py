@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from ...core.config import config_manager
 from ...core.logging import logger
@@ -86,6 +86,8 @@ class RateLimiter:
         burst: 桶容量（允许的突发请求数），必须 >= 1
         clock: 单调时钟注入点（默认 ``time.monotonic``）
         sleep: 等待注入点（默认 ``time.sleep``），测试可注入假实现
+        async_sleep: 异步等待注入点（默认 ``asyncio.sleep``），仅供
+            :meth:`acquire_async` 使用；测试可注入可控等待以确定性地验证取消回滚
     """
 
     def __init__(
@@ -94,6 +96,7 @@ class RateLimiter:
         burst: int = DEFAULT_BURST,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        async_sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         # 防御：非法参数回落默认值（配置层已归一化，此处兜底并记日志）
         if not isinstance(rate, (int, float)) or rate <= 0:
@@ -111,6 +114,8 @@ class RateLimiter:
         self.burst = int(burst)
         self._clock = clock
         self._sleep = sleep
+        # None 表示沿用 asyncio.sleep；延迟到调用点解析，便于测试 monkeypatch。
+        self._async_sleep = async_sleep
 
         self._lock = threading.Lock()
         self._tokens = float(self.burst)
@@ -226,7 +231,7 @@ class RateLimiter:
                     )
                 total_wait += remaining
                 self._log_wait(remaining, reason)
-                await asyncio.sleep(remaining)
+                await (self._async_sleep or asyncio.sleep)(remaining)
         except asyncio.CancelledError:
             self._rollback(reserved_debt)
             logger.info(
@@ -243,8 +248,14 @@ class RateLimiter:
         供同步/异步等待路径在"放弃预约"（累计等待超预算 / 等待被取消）时归还
         容量；夹紧避免等待期间 :meth:`_refill` 已把令牌补到 ``burst`` 时直接相加
         把 ``_tokens`` 推过桶容量（超发）。
+
+        冲销前先把令牌桶推进到当前时刻：``_reserve`` / ``_remaining_wait`` 都在
+        锁内 refill，若此处跳过，归还量会叠加在一个陈旧时间点上，使「取消后
+        立即读到的可用令牌」少算整个等待时长（时间本身不丢，但瞬时状态与其他
+        路径不自洽）。
         """
         with self._lock:
+            self._refill(self._clock())
             self._tokens = min(self._tokens + reserved_debt, self.burst)
 
     def _reserve(self, timeout: float) -> tuple[float, float]:

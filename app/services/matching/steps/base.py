@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import STATUS_SKIPPED
 from app.services.sync_service.match_trace import MatchCandidate
 
 
@@ -67,7 +68,9 @@ def skipped_outcome(gate: Gate, /, **extra: Any) -> StepOutcome:
     为准。这样调用方即使多传也不会报错。
     """
     extra.pop("gate", None)
-    return StepOutcome(status="skipped", reason=gate.describe, gate=gate.name, **extra)
+    return StepOutcome(
+        status=STATUS_SKIPPED, reason=gate.describe, gate=gate.name, **extra
+    )
 
 
 @dataclass

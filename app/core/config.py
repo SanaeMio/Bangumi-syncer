@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_schema import (
+    SECTIONS,
     all_env_overrides,
     non_account_bangumi_sections,
 )
@@ -35,6 +36,48 @@ _SECTION_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
 
 # 配置文件变更探测的最小间隔（秒）。只在自动发现外部修改时生效。
 _CONFIG_STAT_THROTTLE_SECONDS = 1.0
+
+# INI / DB 中视为「真」的字符串取值。
+# 账号段与 LLM 段曾各有一套判定：账号段不认 "enabled"，同一个词写在不同段里
+# 得到相反结果。这里收成单一来源。
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on", "enabled"})
+
+
+def to_bool(value: Any, default: bool = False) -> bool:
+    """把配置值规范化为 bool（兼容 INI 字符串、DB 0/1 与 None）。
+
+    - bool 原样返回
+    - None 返回 ``default``（调用方据此表达「缺失时的语义」）
+    - 数字按真值转换（0 → False）
+    - 字符串按 ``_TRUE_VALUES`` 匹配，其余一律 False（fail-closed）
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in _TRUE_VALUES
+
+
+def _resolve_section_name(config: ConfigParser, section: str) -> str | None:
+    """按段名查找配置段，兼容连字符与下划线两种写法。
+
+    INI 段名约定用连字符（``[bangumi-data]``），而前端 form name 和部分调用方
+    用下划线（``bangumi_data``）。只做**一次** - ↔ _ 互换重试，不做模糊匹配，
+    避免误命中相邻段；两种写法同时存在时精确匹配优先。
+    """
+    if config.has_section(section):
+        return section
+    alt = section.replace("-", "_") if "-" in section else section.replace("_", "-")
+    if alt == section:
+        return None
+    # 只对 schema 登记过的段名重试：动态段名（summary-<用户命名>、
+    # notify-email-N …）里的下划线属于用户数据，把 summary-a_b 重试成
+    # summary-a-b 会静默读到另一个任务的配置。
+    if section not in SECTIONS and alt not in SECTIONS:
+        return None
+    return alt if config.has_section(alt) else None
 
 
 def _validate_section_key(section: str, key: str) -> None:
@@ -330,13 +373,14 @@ class ConfigManager:
     def get_section(
         self, section: str, fallback: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """获取配置段"""
+        """获取配置段（段名兼容 - 与 _ 两种写法）"""
         config = self.get_config_parser()
-        if not config.has_section(section):
+        resolved = _resolve_section_name(config, section)
+        if resolved is None:
             return fallback or {}
 
         result = {}
-        for key, value in config.items(section):
+        for key, value in config.items(resolved):
             # 尝试转换为适当的数据类型
             if value.lower() in ("true", "false"):
                 result[key] = value.lower() == "true"
@@ -348,20 +392,21 @@ class ConfigManager:
         master = self._get_master_secret(config)
         for k, v in list(result.items()):
             if isinstance(v, str):
-                result[k] = decrypt_if_sensitive(section, k, v, master=master)
+                result[k] = decrypt_if_sensitive(resolved, k, v, master=master)
 
         return result
 
     def get_config(self, section: str, key: str, fallback: Any = None) -> Any:
-        """获取配置值"""
+        """获取配置值（段名兼容 - 与 _ 两种写法）"""
         config = self.get_config_parser()
-        if not config.has_section(section):
+        resolved = _resolve_section_name(config, section)
+        if resolved is None:
             return fallback
 
-        if not config.has_option(section, key):
+        if not config.has_option(resolved, key):
             return fallback
 
-        value = config.get(section, key)
+        value = config.get(resolved, key)
 
         # 尝试转换为适当的数据类型
         if value.lower() in ("true", "false"):
@@ -370,7 +415,7 @@ class ConfigManager:
             return int(value)
         else:
             master = self._get_master_secret(config)
-            out = decrypt_if_sensitive(section, key, value, master=master)
+            out = decrypt_if_sensitive(resolved, key, value, master=master)
             return out if isinstance(out, str) else value
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
@@ -729,13 +774,6 @@ class ConfigManager:
         - llm_match_thinking_level (str, 默认 "medium")
         """
 
-        def _to_bool(v: Any, default: bool) -> bool:
-            if isinstance(v, bool):
-                return v
-            if v is None:
-                return default
-            return str(v).strip().lower() in ("true", "1", "yes", "on", "enabled")
-
         def _to_int(v: Any, default: int) -> int:
             try:
                 return int(v)
@@ -743,7 +781,7 @@ class ConfigManager:
                 return default
 
         return {
-            "llm_match_assist": _to_bool(
+            "llm_match_assist": to_bool(
                 self.get("sync", "llm_match_assist", fallback=False), False
             ),
             "llm_match_cron": self.get(

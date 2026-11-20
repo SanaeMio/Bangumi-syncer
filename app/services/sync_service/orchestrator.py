@@ -20,8 +20,10 @@ import traceback
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from ...core.config import to_bool
 from ...core.logging import get_sync_run_id, logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
+from ..matching.contracts import STATUS_ERROR, STATUS_MISS
 from .context import ExecutionContext
 from .errors import PendingCandidateContractError, PendingCandidatePersistError
 from .match_trace import MatchTrace
@@ -147,7 +149,7 @@ class SyncOrchestrator:
             terminal = exec_ctx.terminal
             if terminal is not None:
                 stage, outcome = terminal
-                if stage == "episode_resolve" and outcome.status == "error":
+                if stage == "episode_resolve" and outcome.status == STATUS_ERROR:
                     # 认证失败等：走统一异常处理（保持原 raise 语义）
                     err = ValueError(
                         (outcome.error_detail or {}).get("message", outcome.reason)
@@ -155,7 +157,7 @@ class SyncOrchestrator:
                     return self._handle_sync_exception(
                         item, actual_source, trace, err, status_holder
                     )
-                if stage == "cross_season" and outcome.status == "miss":
+                if stage == "cross_season" and outcome.status == STATUS_MISS:
                     # 集数不存在：不发 bangumi_id_found（旧实现 resolve 成功后
                     # 才通知，避免"已找到"与失败通知的矛盾序列）
                     #
@@ -177,7 +179,7 @@ class SyncOrchestrator:
                         status_holder,
                         detail=detail,
                     )
-                if stage == "sync_action" and outcome.status == "error":
+                if stage == "sync_action" and outcome.status == STATUS_ERROR:
                     status_holder[0] = "error"
                     return SyncResponse(
                         status="error",
@@ -585,7 +587,7 @@ class SyncOrchestrator:
             # 调度器读取同一口径；非 dict（如测试 mock）按未启用处理。
             cfg = config_manager.get_sync_llm_match_config()
             raw = cfg.get("llm_match_assist", False) if isinstance(cfg, dict) else False
-            enabled = str(raw).strip().lower() in ("true", "1", "yes", "on", "enabled")
+            enabled = to_bool(raw)
             if not enabled:
                 return False
             llm_cfg = config_manager.get_llm_config() or {}

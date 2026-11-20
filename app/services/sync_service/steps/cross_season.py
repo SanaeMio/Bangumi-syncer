@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+from app.services.matching.contracts import (
+    STATUS_HIT,
+    STATUS_MISS,
+)
 from app.services.matching.gates import (
     EPISODE_ALREADY_RESOLVED,
     MOVIE_SUBJECT_MARKED,
@@ -62,7 +66,7 @@ class CrossSeasonStep(ExecutionStepBase):
                 f"episode={target_ep}"
             )
             return StepOutcome(
-                status="miss",
+                status=STATUS_MISS,
                 reason=(
                     f"已按自定义映射绑定条目 {ctx.subject_id}，但其中不存在"
                     f"第 {target_ep} 集；因是显式映射，不再跨季改选其它条目"
@@ -108,7 +112,7 @@ class CrossSeasonStep(ExecutionStepBase):
                 else f"sort={target_ep}"
             )
             return StepOutcome(
-                status="miss",
+                status=STATUS_MISS,
                 reason=f"跨季链查找未命中含 {ep_desc} 的季条目",
                 inputs=inputs,
                 outputs={
@@ -136,7 +140,7 @@ class CrossSeasonStep(ExecutionStepBase):
         # 改选结果经结果链 merge 覆盖上游产物（同键覆盖），final_* 覆写由
         # ResultStep 统一结算
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=str(chain_subject_id),
             reason=(
                 f"跨季链查找命中（{path_label}）：原 subject_id={prev_subject_id} → "

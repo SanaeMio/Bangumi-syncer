@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import STATUS_HIT
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 
 
@@ -25,7 +26,7 @@ class NormalizeStep(MatchStepBase):
         ctx.normalized_title = normalized
         ctx.trace.normalized_title = normalized
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             reason=f"标题归一化：{ctx.item.title!r} → {normalized!r}",
             inputs={"title": ctx.item.title},
             outputs={"normalized_title": normalized},

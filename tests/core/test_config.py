@@ -207,6 +207,30 @@ class TestConfigManagerBranches:
         assert cm.get_config("missing", "k", fallback="d") == "d"
         assert cm.get("sync", "nope", fallback=9) == 9
 
+    def test_get_config_section_name_accepts_underscore_alias(self, tmp_path):
+        """段名写成下划线也要能读到连字符段（#1：bangumi_data 开关关不掉）"""
+        cm = _config_manager_from_ini(tmp_path, "[bangumi-data]\nenabled = false\n")
+        assert cm.get_config("bangumi_data", "enabled", fallback=True) is False
+        assert cm.get_section("bangumi_data")["enabled"] is False
+
+    def test_get_config_section_name_exact_match_wins(self, tmp_path):
+        """两种写法同时存在时精确匹配优先，不做模糊猜测"""
+        cm = _config_manager_from_ini(
+            tmp_path, "[a-b]\nk = hyphen\n[a_b]\nk = underscore\n"
+        )
+        assert cm.get_config("a-b", "k") == "hyphen"
+        assert cm.get_config("a_b", "k") == "underscore"
+
+    def test_section_alias_only_applies_to_schema_sections(self, tmp_path):
+        """动态段名（summary-<用户命名>）不做 - 与 _ 互换重试。
+
+        ``summary-a_b`` 与 ``summary-a-b`` 是两个用户建的任务；把前者当后者的
+        别名会静默读到另一个任务的配置。别名只服务 schema 登记过的段名。
+        """
+        cm = _config_manager_from_ini(tmp_path, "[summary-a-b]\nname = a-b\n")
+        assert cm.get_section("summary-a_b") == {}
+        assert cm.get_section("summary-a-b") == {"name": "a-b"}
+
     def test_get_set_reload_aliases(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[sync]\nmode = single\n")
         cm.set("sync", "extra", "hello")
@@ -812,3 +836,25 @@ class TestConfigValueLiteral:
 
         assert cm.get("sync", "note") == "%(missing)s"
         assert cm.get_section("sync")["note"] == "%(missing)s"
+
+
+class TestToBool:
+    """配置布尔解析只有一套实现（账号段曾不认 enabled）"""
+
+    def test_true_values(self):
+        from app.core.config import to_bool
+
+        for value in ("1", "true", "TRUE", "yes", "on", "enabled", True, 1):
+            assert to_bool(value) is True, value
+
+    def test_false_values(self):
+        from app.core.config import to_bool
+
+        for value in ("0", "false", "no", "off", "", "whatever", False, 0):
+            assert to_bool(value) is False, value
+
+    def test_none_uses_default(self):
+        from app.core.config import to_bool
+
+        assert to_bool(None) is False
+        assert to_bool(None, True) is True

@@ -456,7 +456,14 @@ def test_safe_backup_path_rejects_symlink_escape(backup_layout, tmp_path):
     """符号链接指向备份目录外时应被拒绝"""
     secret = tmp_path / "secret.ini"
     secret.write_text("SECRET", encoding="utf-8")
-    (backup_layout / "escape.ini").symlink_to(secret)
+    try:
+        (backup_layout / "escape.ini").symlink_to(secret)
+    except (OSError, NotImplementedError) as exc:
+        # Windows 创建文件符号链接需要管理员权限或开发者模式；受限环境下
+        # 无法构造「目录内链接指向目录外」这一场景（硬链接不改变路径、
+        # 目录联接只能指向目录，都走不到 _safe_backup_path 的逃逸分支），
+        # 因此跳过而非报失败。
+        pytest.skip(f"当前环境无法创建符号链接，跳过逃逸校验：{exc}")
     with pytest.raises(HTTPException) as exc_info:
         config._safe_backup_path("escape.ini")
     assert exc_info.value.status_code == 404

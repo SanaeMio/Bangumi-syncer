@@ -13,6 +13,7 @@ from ..bangumi_archive._title_normalize import (
     fuse_title_similarity,
 )
 from ..bangumi_constants import SUBJECT_TYPE_ANIME
+from ..infobox import extract_infobox_aliases
 from ..season_title import extract_explicit_season, extract_season_candidates
 from .failure import READ_FALLBACK_ERRORS
 
@@ -477,23 +478,9 @@ class SearchMixin:
         norm_ori = _normalize_title_for_match(ori_title)
         cand_name = bgm_data.get("name") or None
         cand_name_cn = bgm_data.get("name_cn") or None
-        cand_aliases: list[str] = []
 
-        # 提取 infobox 中的别名，兼容多种历史数据格式
-        infobox = bgm_data.get("infobox", [])
-        if isinstance(infobox, list):
-            for info in infobox:
-                if info.get("key") == "别名":
-                    alias_value = info.get("value")
-                    if isinstance(alias_value, list):
-                        for alias_item in alias_value:
-                            if isinstance(alias_item, dict) and "v" in alias_item:
-                                cand_aliases.append(alias_item["v"])
-                            elif isinstance(alias_item, str):
-                                cand_aliases.append(alias_item)
-                    elif isinstance(alias_value, str):
-                        cand_aliases.append(alias_value)
-                    break
+        # 提取 infobox 中的别名（实现统一在 app.utils.infobox）
+        cand_aliases = extract_infobox_aliases(bgm_data.get("infobox"))
 
         # G2：统一委托给 bangumi_archive._title_normalize.fuse_title_similarity
         # （Archive 模糊打分已改用同一实现），保留 API 路径切点：

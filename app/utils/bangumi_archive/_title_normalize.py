@@ -27,6 +27,9 @@ from typing import NamedTuple
 
 from rapidfuzz import fuzz
 
+from ..season_suffix import SCOPE_CALLER_TITLE, strip_season_markers
+from ..title_patterns import WHITESPACE_RE, YEAR_TOKEN
+
 
 def _nfkc(text: str) -> str:
     """Unicode NFKC 归一化（全角→半角、半角片假名→全角等）。
@@ -45,35 +48,9 @@ def _nfkc(text: str) -> str:
     return unicodedata.normalize("NFKC", text)
 
 
-# 季数/集数后缀剥离模式（按优先级排序，长模式在前）
-# 处理 fongmi/Plex/Jellyfin 等传入的「标题 S06E279」「标题 第N季」「标题 第二季」等格式，
-# 剥离后用核心标题去 archive 匹配（archive 中存的是第一季本体名，不含季后缀）
-_SEASON_EPISODE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # S06E279 / S6E27 / S01E01（含可选空格与分隔符）
-    re.compile(r"\s*S\s*\d+\s*E\s*\d+.*$", re.IGNORECASE),
-    # 第N季 / 第N期（阿拉伯数字）
-    re.compile(r"\s*第\s*\d+\s*[期季].*$"),
-    # 第N季 / 第N期（中文数字，含"十一"~"十九"）
-    re.compile(r"\s*第\s*[一二三四五六七八九十]+\s*[期季].*$"),
-    # 第二季 / 第二期（直接拼接，无"第"字前缀的少见情况，保留兼容）
-    re.compile(r"\s*[一二三四五六七八九十]+\s*[期季].*$"),
-    # Season N / 2nd season / Nth season
-    re.compile(r"\s*season\s*\d+.*$", re.IGNORECASE),
-    re.compile(r"\s*\d+(?:st|nd|rd|th)?\s*season.*$", re.IGNORECASE),
-    # 上半 / 下半 / 第2部分
-    re.compile(r"\s*(?:上|下)半.*$"),
-    re.compile(r"\s*第\s*\d+\s*部分.*$"),
-    # 第N部 / 第N章 / 第N篇（中文数字，含"十一"~"十九"）
-    # 注意：仅剥离末尾的"第N部"等后缀，避免误剥"第三部门"等复合词
-    re.compile(r"\s*第\s*\d+\s*部$"),
-    re.compile(r"\s*第\s*[一二三四五六七八九十]+\s*部$"),
-    # 罗马数字版本号后缀（末尾空格 + II/III/IV/VI/VII/VIII/IX/XI 等 2 字符以上）
-    # 仅匹配末尾，避免误剥"Star Wars: Episode IV"（中间 IV）
-    # 单字符 I 不剥离（容易误剥人名/缩写如 "Henry I"）
-    re.compile(r"\s+[IVX]{2,}$"),
-    # vN / ver.N / version N / vol.N 末尾版本号
-    re.compile(r"\s+(?:v|ver|version|vol)\.?\s*\d+$", re.IGNORECASE),
-)
+# 季数/集数后缀剥离模式已集中登记在 ``app.utils.season_suffix``（scope=caller_title），
+# 与 bangumi-data / TMDB / 文件名三套并排维护。此处只保留 archive 专属的
+# 续篇/外传维度，由 ``_strip_season_episode_suffix`` 追加进同一次扫描。
 
 # 续篇 / 外传 / 特别篇 / 前传 等「去修饰得核心」尾部后缀（side-story / sequel 维度）
 # 经 Archive 真实数据校准（subject 表 56,539 条，name 56,539 / name_cn 40,748，见 §14）：
@@ -198,8 +175,6 @@ _TITLE_DECORATORS = (
 # 而「X 番外」(真实外传条目) 末尾的"番外"应剥除以比对本体。
 _TITLE_DECORATORS_TRAILING = ("番外",)
 
-_RE_WHITESPACE = re.compile(r"\s+")
-
 
 def _normalize_title_for_match(text: str) -> str:
     """匹配相似度用的标题归一化。
@@ -213,7 +188,7 @@ def _normalize_title_for_match(text: str) -> str:
     # 0. NFKC：与索引侧 _normalize_key 对齐，全角标题先折半角再参与打分
     text = _nfkc(text)
     # 1. 折叠所有空白字符为无
-    norm = _RE_WHITESPACE.sub("", text)
+    norm = WHITESPACE_RE.sub("", text)
     # 2. 去除修饰词（处理"斗破苍穹年番"与"斗破苍穹 年番"两种写法）
     for dec in _TITLE_DECORATORS:
         # 修饰词前后可能带空格（已被折叠为空，此处直接去词）
@@ -248,29 +223,18 @@ def _strip_season_episode_suffix(title: str) -> str:
     archive 中存的是「完美世界」「向阳素描」，直接匹配会因 fuzzy 阈值过低而 miss。
     剥离后用核心标题再试，命中率显著提升。
 
-    两组尾部模式分别见：
-    - `_SEASON_EPISODE_PATTERNS`：季数/集数维度（第N季/第N期/SxxExx/Season N 等）
-    - `_PART_SUFFIX_PATTERNS`：续篇/外传/特别篇维度（经 §14 Archive 真实数据校准）
-    原 `_strip_part_suffix` 已合并进本函数（2026-08-15），统一在单循环内尝试两类后缀，
-    季后缀优先、互不干扰，覆盖「向阳素描 特别篇」→「向阳素描」这类原季后缀剥离漏掉的召回维度。
+    季数/集数维度统一由 ``app.utils.season_suffix`` 的 ``caller_title`` profile 提供
+    （NFKC + 首条命中截断 + 核心长度 >= 2 保护）；本函数只额外追加 archive 专属的
+    ``_PART_SUFFIX_PATTERNS``（续篇/外传/特别篇，经 §14 Archive 真实数据校准）。
+    原 `_strip_part_suffix` 已合并进本函数（2026-08-15），两类后缀在同一次扫描中
+    按「季后缀优先、续篇其次」的顺序尝试。
 
     保留策略：仅剥离能识别的后缀，无法识别时原样返回（不影响精确匹配）。
     顺序：长后缀在前（番外篇 > 番外、续集 > 续），避免误剥。
-
-    仅当剥离后仍有实质内容（长度 >= 2）时才剥离，避免把短标题误剥为空。
     """
-    if not title:
-        return title
-    # NFKC 优先：全角 `シーズン ２` / `Season ２` 折半角后才能命中 ASCII 正则
-    cleaned = _nfkc(title).strip()
-    for pattern in (*_SEASON_EPISODE_PATTERNS, *_PART_SUFFIX_PATTERNS):
-        m = pattern.search(cleaned)
-        if m:
-            stripped = cleaned[: m.start()].strip()
-            # 剥离后需保留实质内容（长度 >= 2），避免误剥成空串
-            if len(stripped) >= 2:
-                return stripped
-    return cleaned
+    return strip_season_markers(
+        title, SCOPE_CALLER_TITLE, extra_patterns=_PART_SUFFIX_PATTERNS
+    )
 
 
 def _strip_title_wrappers(title: str) -> str:
@@ -348,8 +312,9 @@ _DECOR_SMALL_KANA = frozenset("ァィゥェォッャュョヮヵヶ")
 # 数字编号：第N / S# / #N 等（区别于季数后缀，这里覆盖更宽）
 _DECOR_NUMERAL_RE = re.compile(r"第\s*[0-9一二三四五六七八九十百千万]+|S\d{1,2}|#\d+")
 
-# 年份后缀：19xx / 20xx（含括号包裹），如「Name 2021」→「Name」
-_DECOR_YEAR_RE = re.compile(r"[(（]?(?:19|20)\d{2}[)）]?")
+# 年份后缀：19xx / 20xx（含括号包裹），如「Name 2021」→「Name」。
+# 年份词元与 title_patterns.YEAR_TOKEN 单源，这里只加「连括号一起剥」的外壳。
+_DECOR_YEAR_RE = re.compile(rf"[(（]?{YEAR_TOKEN}[)）]?")
 
 
 def strip_bracket_content(text: str) -> str:

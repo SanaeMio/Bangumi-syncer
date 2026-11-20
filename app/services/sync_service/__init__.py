@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ...core.config import config_manager
+from ...core.config_schema import DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 from ...core.database import database_manager
 from ...core.logging import (
     batch_log_context,
@@ -37,6 +38,7 @@ from ...utils.bangumi_constants import (
     SUBJECT_TYPE_REAL as SUBJECT_TYPE_REAL,
 )
 from ...utils.bangumi_data import BangumiData, bangumi_data
+from ...utils.infobox import extract_infobox_aliases
 from ...utils.media_type_detector import detect_media_type as detect_media_type
 from ..mapping_service import get_mapping_revision, mapping_service
 from ..matching.identity import build_match_business_key
@@ -64,25 +66,9 @@ def _extract_infobox_aliases(cand: dict) -> list[str]:
     """从候选条目的 infobox 中提取别名列表（兼容多种历史数据格式）
 
     用于 infobox_aliases 字段，帮助理解 title_diff_ratio 为何给出该分数。
+    实现统一在 ``app.utils.infobox``，此处仅保留调用点契约。
     """
-    aliases: list[str] = []
-    infobox = cand.get("infobox")
-    if not isinstance(infobox, list):
-        return aliases
-    for info in infobox:
-        if not isinstance(info, dict) or info.get("key") != "别名":
-            continue
-        value = info.get("value")
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, dict) and "v" in item:
-                    aliases.append(str(item["v"]))
-                elif isinstance(item, str):
-                    aliases.append(item)
-        elif isinstance(value, str):
-            aliases.append(value)
-        break
-    return aliases
+    return extract_infobox_aliases(cand.get("infobox"))
 
 
 def _detect_candidate_media_type(cand: dict) -> str:
@@ -1734,13 +1720,17 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """读取同步配置 `match_confidence_threshold`（模糊匹配自动采用阈值）。
 
         低于该相似度的 Bangumi API 匹配不会自动采用，而是沉淀到待审队列。
-        默认 0.6；配置缺失或非法时回退到默认值。
+        默认值见 ``DEFAULT_MATCH_CONFIDENCE_THRESHOLD``；配置缺失或非法时回退到它。
         """
         try:
-            val = config_manager.get("sync", "match_confidence_threshold", fallback=0.6)
+            val = config_manager.get(
+                "sync",
+                "match_confidence_threshold",
+                fallback=DEFAULT_MATCH_CONFIDENCE_THRESHOLD,
+            )
             return float(val)
         except (TypeError, ValueError):
-            return 0.6
+            return DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 
     # ------------------------------------------------------------------
     # 匹配结果记忆化

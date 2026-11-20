@@ -18,16 +18,25 @@ from functools import lru_cache
 
 from rapidfuzz import fuzz
 
+from ...core.config_schema import DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 from ...core.logging import logger
 from ...utils.media_type_detector import detect_media_type
-from ..season_title import extract_season_candidates
-from ..title_patterns import SEASON_SUFFIX_PATTERNS
+from ..season_suffix import SCOPE_BANGUMI_DATA, strip_season_markers
+from ..season_title import extract_explicit_season, extract_season_candidates
 
 # 日期解析记忆化：bangumi-data 的 begin 是条目常量，但 _calculate_match_info
 # 会对每条候选重复调用 strptime（8.8k 条目 × 2 次 30/120 天判定 ≈ 每次查询 3.5 万次），
 # 实测占全表扫描耗时的 ~78%。strptime 是纯函数，记忆化不改变任何匹配语义，
 # 仅避免在常量上反复解析（Windows 上还会连带触发 setlocale/getlocale）。
 _DATE_PARSE_CACHE_SIZE = 8192
+
+# 日期容差（天）。仅用于 bangumi-data 单层匹配，与 step 层的
+# DATE_GUARD_REJECT_DAYS（365，硬校验拒绝）是不同语义，勿合并：
+# - 精确索引命中时，日期差 <= 该值才直接采信，否则回退线性扫描找更接近的条目
+# - 多个完全匹配择优时，用它判断 date_matched（是否为同一档期的同一条目）
+_EXACT_MATCH_DATE_TOLERANCE_DAYS = 180
+# 全局日期择优窗口：仅日期差 <= 该值的部分匹配参与择优
+_DATE_PREFERENCE_WINDOW_DAYS = 90
 
 
 @lru_cache(maxsize=_DATE_PARSE_CACHE_SIZE)
@@ -114,10 +123,8 @@ class MatchingMixin:
         # 如果是非第一季，尝试从标题中识别第一季的标题
         original_title = title
         if season > 1:
-            # 尝试移除标题中可能包含的季度信息（模式单源 title_patterns）
-            title_without_season = title
-            for _pat in SEASON_SUFFIX_PATTERNS:
-                title_without_season = _pat.sub("", title_without_season)
+            # 移除标题中可能包含的季度信息（模式单源 season_suffix）
+            title_without_season = strip_season_markers(title, SCOPE_BANGUMI_DATA)
 
             if title_without_season != title:
                 logger.debug(f"移除季度信息后的标题: {title_without_season}")
@@ -146,12 +153,16 @@ class MatchingMixin:
         release_date: str,
         media_type: str = "",
         season: int = 1,
+        evidence_title: str | None = None,
     ) -> tuple[str, str, bool, dict] | None:
         """尝试通过标题索引进行精确匹配（O(1)查找，避免线性扫描）
 
         :param season: 请求的季度。>1 时同一标题键下可能同时挂着本季与**上一季**
             的条目（别名重叠），需要按条目自身声明的季号筛掉异季候选。
             详见 ``_filter_candidates_by_season``。
+        :param evidence_title: 调用方**原始**标题（未被季标剥离改写过）。季号
+            收敛后的兜底要靠它判断「请求是否自己声明了这一季」—— ``title``
+            此时可能已经是 ``XX Season 2`` 剥完的 ``XX``（见 ``find_bangumi_id``）。
 
         Returns:
             匹配结果或 None（None 表示需要回退到线性扫描）
@@ -173,36 +184,78 @@ class MatchingMixin:
             )
             # 季号筛选（issue #269）：同名键下可能混着别的季，先按季收敛，
             # 避免「S2 的请求 + S1 的日期恰好落在窗口内」把上一季当成目标季。
+            indexed_candidates = exact_candidates
             exact_candidates = self._filter_candidates_by_season(
                 exact_candidates, season
             )
             if not exact_candidates:
+                # 续作条目不存在时落回日期吻合的基础条目（详见
+                # ``_fallback_to_base_entry``）。放在索引路径而不是只放线性
+                # 扫描里，是为了让 matched_title / date_matched 与旧行为一致。
+                #
+                # 但索引路径有一个它自己看不见的盲区：``season > 1`` 时
+                # ``find_bangumi_id`` 会**先把季标剥掉**再进来（``XX Season 2``
+                # → ``XX``），于是索引只查得到基础条目。「这个索引键下没有本季」
+                # 并不等于「库里没有本季」：真实续作往往挂在另一个别名下
+                # （``XX 2nd Season``），只有线性扫描的 ``_pick_season_from_partial``
+                # 看得见。因此季标被改写过就不在此兜底，交回线性扫描 —— 否则
+                # 一条「单季番被加了后缀」的兜底会吃掉真实存在的续作。
+                evidence = evidence_title or title
+                if evidence == title:
+                    exact_candidates = self._fallback_to_base_entry(
+                        evidence, indexed_candidates, release_date, season
+                    )
+            if not exact_candidates:
                 return None
             if release_date:
-                # 请求日期在整轮候选里是常量，解析一次即可。
-                # 原实现写在 for 内，同一日期会被重复解析 N 次（实测单次
-                # 全表扫描 33,518 次调用、仅 8,926 个不同输入）。
-                d1 = _coerce_ymd(release_date)
                 min_diff = float("inf")
                 best = None
                 for item, bangumi_id, matched_key in exact_candidates:
                     item_date = item.get("begin", "")
-                    if item_date:
-                        d2 = _coerce_ymd(item_date)
-                        if d1 is None or d2 is None:
-                            continue
-                        diff = abs((d1 - d2).days)
-                        if diff < min_diff:
-                            min_diff = diff
-                            best = (bangumi_id, matched_key, True, item)
+                    if not item_date:
+                        continue
+                    # 统一走 _date_diff：**候选 begin 与请求日期的比较只有这一个
+                    # 实现**。此处曾经直接写 abs((d1 - d2).days)（自带一份解析），
+                    # 与线性扫描路径的 _date_diff 构成两套逻辑。后果不是重复代码
+                    # 而是口径分叉：任何日期语义的调整只落在 _date_diff 里（例如
+                    # 按集号把 begin 外推到预期播出日），这条 O(1) 索引路径就会
+                    # 静默绕过 —— 同一个候选在两条路径上算出不同的天数（实测同一
+                    # 条目：索引路径 400 天、扫描路径 288 天），是否被采信取决于
+                    # 请求恰好走进了哪条路径，这种差异事后极难归因。
+                    # 解析代价不是问题：_coerce_ymd 走 _parse_ymd_cached，重复
+                    # 解析同一个 release_date 是缓存命中。
+                    diff = self._date_diff(item_date, release_date)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best = (bangumi_id, matched_key, True, item)
                 if best:
-                    if min_diff <= 180:
+                    if min_diff <= _EXACT_MATCH_DATE_TOLERANCE_DAYS:
                         return best
-                    # 日期差>180天，fall through 到线性扫描检查部分匹配
+                    # 日期差超过容差，fall through 到线性扫描检查部分匹配
                     logger.debug(
-                        f"标题索引命中但日期差 {min_diff} 天 > 180，回退线性扫描检查部分匹配"
+                        f"标题索引命中但日期差 {min_diff} 天 > "
+                        f"{_EXACT_MATCH_DATE_TOLERANCE_DAYS}，回退线性扫描检查部分匹配"
                     )
             else:
+                # 原名精确优先：请求**原文标题**与某候选的原文标题逐字相同时，
+                # 这个证据比「候选别名里含 OVA / 剧场版 等类型词」的旁证更硬。
+                # L1-S4-039：请求 Candy☆Boy（无日期），95419 原名逐字相等，但
+                # 中文别名是「Candy☆Boy OVA」，media_type 择优据此把它判成 OVA，
+                # 改选了别名相同的 2829。媒体库给的原名与条目原名一致就应当优先。
+                #
+                # 只认 ori_title，不认 title：title 常是**中文名**，它命中候选的
+                # 原文标题只说明「这个名字被当成原名登记了」，不足以推翻类型识别
+                # （完美世界 请求会命中第一季条目，而用户要看的是剧场版）。
+                # 多个原名精确候选时仍然交给 media_type 择优（同名不同版本）。
+                if ori_title:
+                    primary = [
+                        c
+                        for c in exact_candidates
+                        if (c[0].get("title") or "") == ori_title
+                    ]
+                    if primary:
+                        exact_candidates = primary
+
                 # 无日期时：若提供了 media_type 且有多个候选，
                 # 按 detect_media_type(候选标题) 与请求 media_type 一致性择优
                 if media_type and len(exact_candidates) > 1:
@@ -256,10 +309,9 @@ class MatchingMixin:
         收敛规则（仅在 season > 1 时生效，绝不改变第一季的既有行为）：
 
         1. 有候选**明确声明**了请求季号 → 只保留它们（正例，最可信）。
-        2. 否则，剔除**声明了其它季号**的候选。
-        3. 全部候选都指向别的季（含只有 1 条、且它无季号 = 第 1 季的情形）
+        2. 否则（候选全部指向别的季，含只有 1 条、且它无季号 = 第 1 季的情形）
            → 返回空列表判定未命中，让调用方回退线性扫描。
-        4. 无季号信息的候选按**第 1 季**视之：请求第 N (>1) 季时它们不匹配。
+        3. 无季号信息的候选按**第 1 季**视之：请求第 N (>1) 季时它们不匹配。
 
         season == 1 时直接返回原列表：请求方没有可用的季号信息，任何筛选都
         可能误伤（第一季条目常常根本不写季号）。
@@ -284,16 +336,13 @@ class MatchingMixin:
                 )
             return matched
 
-        # 规则 2：剔除声明了其它季的候选
-        kept = [c for c, seasons in declared if season in seasons]
-        if kept:
-            logger.debug(
-                f"按季号筛选候选: 目标季={season}，"
-                f"{len(candidates)} → {len(kept)} 条（剔除异季）"
-            )
-            return kept
-
-        # 规则 3：候选全部指向别的季 —— 判未命中，回退线性扫描。
+        # 规则 2：候选全部指向别的季 —— 判未命中，回退线性扫描。
+        #
+        # 这里原本还有一条「剔除声明了其它季号的候选」，但它的推导式与规则 1
+        # 逐字相同（``season in seasons``），而 ``seasons or {1}`` 保证每个候选
+        # 至少声明了第 1 季 —— 规则 1 已经把所有声明本季的候选取走了，走到这里
+        # 时该表达式必然为空，那条分支永远不可达（已删）。文档里「剔除异季」
+        # 的语义由规则 1 的补集天然实现：留下的就是异季。
         #
         # 扫描会同时找出 S1（精确 score=1.0）与 S2（部分 score≈0.81），
         # 再由 _select_from_exact_matches(..., season) 按季号选中正确条目。
@@ -346,15 +395,33 @@ class MatchingMixin:
 
         精确匹配优先（score=1.0，按出现顺序），其余按 score 降序填充至 limit。
 
+        **按 bangumi id 去重**：同一 subject 在 bangumi-data 里可能有两条记录
+        （原文一条 + 中文名一条，或两条重复登记），它们共享同一个 id。不去重
+        时同一条目会占掉多个 top-5 名额 —— 实测 ``Fate/strange Fake`` 返回
+        ``['443831', '290', '95225', '3484', '443831']``，5 个位置里有 2 个是
+        同一条目。候选列表是候选队列展示与人工确认的输入，重复项既是噪声，
+        也会挤掉真正的第五名。
+
         抽成独立方法供 find_bangumi_candidates 与
         find_bangumi_id(candidates_out=...) 共用：后者在扫描出结果后顺手产出候选，
         避免「先 find_bangumi_id 判无果、再 find_bangumi_candidates 重扫一遍」。
         """
         candidates: list[dict] = []
+        seen_ids: set[str] = set()
 
-        # 精确匹配优先（score=1.0），按出现顺序
-        for item, bangumi_id, _match_type in exact_matches[:limit]:
-            candidates.append(
+        def _push(entry_id: str, payload: dict) -> bool:
+            """收一条；同 id 已收过则跳过并返回 False"""
+            if entry_id in seen_ids:
+                return False
+            seen_ids.add(entry_id)
+            candidates.append(payload)
+            return True
+
+        # 精确匹配优先（score=1.0），按出现顺序。这里**不预先切片**：切片按
+        # 「未去重」的条数算，被去重掉的位置会白白少收一条。
+        for item, bangumi_id, _match_type in exact_matches:
+            if not _push(
+                str(bangumi_id),
                 {
                     "id": str(bangumi_id),
                     "name": item.get("title", ""),
@@ -362,18 +429,21 @@ class MatchingMixin:
                     "score": 1.0,
                     "date": item.get("begin", ""),
                     "source": "bangumi_data_exact",
-                }
-            )
+                },
+            ):
+                continue
             if len(candidates) >= limit:
                 return candidates
 
         # 部分匹配按 score 降序填充。用 sorted 而非 list.sort：本方法的输入可能
         # 仍被调用方（_find_bangumi_id_optimized）继续使用，就地排序会改变其
         # 并列时的遍历次序，进而影响 _select_from_exact_matches 的日期择优。
+        # 去重在这里保留**首次出现**，也就是 score 最高的那条记录。
         for item, score, bangumi_id in sorted(
             partial_matches, key=lambda x: x[1], reverse=True
         ):
-            candidates.append(
+            if not _push(
+                str(bangumi_id),
                 {
                     "id": str(bangumi_id),
                     "name": item.get("title", ""),
@@ -381,8 +451,9 @@ class MatchingMixin:
                     "score": round(score, 3),
                     "date": item.get("begin", ""),
                     "source": "bangumi_data_partial",
-                }
-            )
+                },
+            ):
+                continue
             if len(candidates) >= limit:
                 break
 
@@ -516,6 +587,7 @@ class MatchingMixin:
         partial_matches: list,
         release_date: str,
         season: int,
+        evidence_title: str | None = None,
     ) -> tuple[str, str, bool, dict | None] | None:
         """从完全匹配结果中选择最佳匹配
 
@@ -535,10 +607,28 @@ class MatchingMixin:
         # 此时放弃既有的「日期差 ≤180 就直接采信」捷径，改由下方按季号
         # 在 partial_matches 中择优。
         season_exact = self._filter_candidates_by_season(exact_matches, season)
+        # 是否走了「落回基础条目」的兜底。兜底命中意味着请求本身就是单季番
+        # 被加了季后缀，日期吻合就是它的全部证据 —— 下面必须按 date_matched=True
+        # 返回，否则下游 _judge_season_matched_id 会判「命中的不是目标季」，
+        # 转而去爬续集链并报「不存在或集数过多」，兜底等于白兜。索引路径一直
+        # 是这么返回的，两条路径不能两种口径。
+        used_base_fallback = False
         if not season_exact and season > 1:
-            picked = self._pick_season_from_partial(partial_matches, season)
+            picked = self._pick_season_from_partial(
+                title, partial_matches, release_date, season
+            )
             if picked is not None:
                 return picked
+            # 兜底：请求标题自带本季季标、但候选里**没有**该季条目时，落回日期
+            # 吻合的基础条目。issue #269 修的是「续作条目存在却被忽略」，不是
+            # 「续作条目不存在 → 一律漏标」：单季番被媒体库加上「第二季」后缀，
+            # 或 bangumi-data 尚未收录续作时，一律判未命中会白丢整季的标注。
+            # 日期是这里的证据基础 —— 请求日期必须落在基础条目的放送窗口内，
+            # 真正晚一年的续作请求不会通过。
+            season_exact = self._fallback_to_base_entry(
+                evidence_title or title, exact_matches, release_date, season
+            )
+            used_base_fallback = bool(season_exact)
         exact_matches = season_exact
         if not exact_matches:
             return None
@@ -555,9 +645,9 @@ class MatchingMixin:
                         min_exact_diff = diff
                         best_exact_match = (match_item, match_id, match_type)
 
-            # 当完全匹配的最佳日期相差大于 180 天时，检查部分匹配列表中是否存在日期更接近的条目
+            # 当完全匹配的最佳日期相差超过容差时，检查部分匹配列表中是否存在日期更接近的条目
             # 用于处理同名 OVA 或前传导致误判正片的情况
-            if min_exact_diff > 180 and partial_matches:
+            if min_exact_diff > _EXACT_MATCH_DATE_TOLERANCE_DAYS and partial_matches:
                 logger.debug(
                     f"完全匹配的最佳日期误差高达 {min_exact_diff} 天，启动全局日期择优机制"
                 )
@@ -576,9 +666,9 @@ class MatchingMixin:
                         )
                 dated_candidates.sort(key=lambda x: x[0])
 
-                # 仅日期误差小于等于 90 天的条目参与日期择优（升序排列，超出即可终止）
+                # 仅日期误差在择优窗口内的条目参与日期择优（升序排列，超出即可终止）
                 for diff, pm_item, pm_id, pm_score in dated_candidates:
-                    if diff > 90:
+                    if diff > _DATE_PREFERENCE_WINDOW_DAYS:
                         break
 
                     # 收集该条目的原名和所有中文翻译
@@ -613,7 +703,9 @@ class MatchingMixin:
                     f"从多个完全匹配中择优: {best_exact_match[0].get('title', '')}, 日期差距: {min_exact_diff}天"
                 )
                 matched_title = self._get_best_matched_title(best_exact_match[0])
-                date_matched = season > 1 and min_exact_diff <= 180
+                date_matched = (
+                    season > 1 and min_exact_diff <= _EXACT_MATCH_DATE_TOLERANCE_DAYS
+                )
                 return (
                     best_exact_match[1],
                     matched_title,
@@ -630,10 +722,16 @@ class MatchingMixin:
         )
         # 获取匹配到的标题
         matched_title = self._get_best_matched_title(result_item)
-        # 没有通过日期筛选，标记为非日期匹配
-        return (exact_matches[0][1], matched_title, False, result_item)
+        # 没有通过日期筛选，标记为非日期匹配（兜底命中除外，见上方注释）
+        return (exact_matches[0][1], matched_title, used_base_fallback, result_item)
 
-    def _pick_season_from_partial(self, partial_matches: list, season: int):
+    def _pick_season_from_partial(
+        self,
+        title: str,
+        partial_matches: list,
+        release_date: str | None,
+        season: int,
+    ):
         """从部分匹配里挑出**明确声明了目标季号**的条目（issue #269）。
 
         用于「完全匹配指向的是别的季」这一情形：S2 的标题带 ``第二季`` / ``(第2期)``
@@ -641,18 +739,114 @@ class MatchingMixin:
         （score ≈ 0.81）。此时按季号把它挑出来，比沿用一个标题相同但季数错误的
         完全匹配更可信。
 
+        **光有季号声明不够**：部分匹配的门槛只有 0.4，「XX 第二季」这类查询几乎
+        能捞到全库所有带「第二季」的条目（``マジカノ 第二季`` → ``棒球大联盟
+        第二季``）。因此要求双重证据：
+
+        1. 名字对得上 —— 去掉季标后与查询同源（相等/包含），或模糊分 ≥ 0.8；
+        2. 日期对得上 —— 请求日期落在候选放送日 ±180 天内（没给日期时跳过）。
+
+        只有季号、没有这两条的候选一律不采信，交给基础条目兜底。
+
         Returns:
             ``(bangumi_id, matched_title, date_matched)``，无合适候选时 None。
         """
-        for match_item, _score, match_id in partial_matches:
-            if season in self._candidate_season_numbers(match_item):
-                matched_title = self._get_best_matched_title(match_item)
+        base_query = strip_season_markers(title or "", SCOPE_BANGUMI_DATA).strip()
+        for match_item, score, match_id in partial_matches:
+            if season not in self._candidate_season_numbers(match_item):
+                continue
+            if not self._partial_supports_title(match_item, base_query, score):
                 logger.debug(
-                    f"完全匹配指向其它季，改按季号从部分匹配中采纳: "
-                    f"{matched_title} (目标季={season})"
+                    f"跳过季号相符但名称无关的候选: {match_item.get('title', '')}"
                 )
-                return (match_id, matched_title, True, match_item)
+                continue
+            if release_date:
+                diff = self._date_diff(match_item.get("begin", ""), release_date)
+                if diff > _EXACT_MATCH_DATE_TOLERANCE_DAYS:
+                    logger.debug(
+                        f"跳过季号相符但日期不符的候选: "
+                        f"{match_item.get('title', '')}（日期差 {diff} 天）"
+                    )
+                    continue
+            matched_title = self._get_best_matched_title(match_item)
+            logger.debug(
+                f"完全匹配指向其它季，改按季号从部分匹配中采纳: "
+                f"{matched_title} (目标季={season})"
+            )
+            return (match_id, matched_title, True, match_item)
         return None
+
+    def _partial_supports_title(
+        self, item: dict, base_query: str, score: float
+    ) -> bool:
+        """部分匹配候选是否与查询同源（去掉季标后相等/包含，或模糊分够高）。
+
+        ``base_query`` 已剥掉季标：``マジカノ 第二季`` → ``マジカノ``。候选侧同样
+        剥掉季标再比，否则「同一条目的第二季」永远比不上「同名的第一季别名」。
+        """
+        if score >= 0.8:
+            return True
+        if not base_query:
+            return False
+        names = [item.get("title", "")] + self._get_zh_hans_titles(item)
+        for name in names:
+            if not name:
+                continue
+            base = strip_season_markers(name, SCOPE_BANGUMI_DATA).strip()
+            if base and (
+                base_query == base or base_query in base or base in base_query
+            ):
+                return True
+        return False
+
+    def _fallback_to_base_entry(
+        self,
+        evidence_title: str,
+        exact_matches: list,
+        release_date: str | None,
+        season: int,
+    ) -> list:
+        """没有本季条目时，挑出日期吻合的基础条目（issue #269 之后的兜底）。
+
+        触发条件（三条同时满足，缺一不可 —— 这是「宁可漏标」的边界）：
+
+        1. 请求标题**自己**声明了目标季号（``XX 第二季`` / ``XX Season 2``）：
+           媒体库明确说这是续作，不是随便一个 S2 请求；
+        2. 候选里没有任何条目声明该季（调用方已筛空，这里是既成事实）；
+        3. 恰好有完全匹配条目的放送日在请求日期 ±180 天内 —— 日期吻合说明
+           请求指的就是这条基础条目（单季番被加了季后缀），而不是还没收录的续作。
+
+        任一条不满足就返回空列表（判未命中）。``正相反的你与我`` 这类**不带**
+        季标的 S3 请求因此仍不会退回第一季（见 issue #269 的
+        ``test_nonexistent_season_does_not_fall_back_to_season_one``）。
+
+        :param evidence_title: 调用方原始标题（未剥季标）。不能用剥过的 title：
+            ``XX Season 2`` 在 ``find_bangumi_id`` 里已被剥成 ``XX``，季标证据
+            会凭空消失。
+        """
+        if not release_date or not exact_matches:
+            return []
+        if extract_explicit_season(evidence_title) != season:
+            return []
+
+        best = None
+        best_diff = _EXACT_MATCH_DATE_TOLERANCE_DAYS
+        for candidate in exact_matches:
+            item = candidate[0]
+            diff = self._date_diff(item.get("begin", ""), release_date)
+            if diff <= best_diff:
+                best, best_diff = candidate, diff
+
+        if best is None:
+            logger.debug(
+                f"请求声明第 {season} 季但无该季条目，且基础条目日期不吻合，判未命中"
+            )
+            return []
+        logger.debug(
+            f"第 {season} 季请求无对应条目，落回日期吻合的基础条目: "
+            f"{best[0].get('title', '')}（日期差 {best_diff} 天）"
+        )
+        return [best]
 
     def _select_from_partial_matches(
         self,
@@ -677,7 +871,7 @@ class MatchingMixin:
                     f"  {i + 1}. {item.get('title', '')}, 中文翻译: {zh_hans_str}, 匹配度: {score}"
                 )
 
-        if partial_matches[0][1] >= 0.6:
+        if partial_matches[0][1] >= DEFAULT_MATCH_CONFIDENCE_THRESHOLD:
             best_match = partial_matches[0][0]
             highest_score = partial_matches[0][1]
             bangumi_id = partial_matches[0][2]
@@ -719,8 +913,10 @@ class MatchingMixin:
                 共用同一证据基（见 find_bangumi_id 同名字段）。
         """
         # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
+        # 兜底要看「调用方原话」，不能用被季标剥离改写过的 title（见 _try_exact_match）
+        evidence_title = original_title or title
         result = self._try_exact_match(
-            title, ori_title, release_date, media_type, season
+            title, ori_title, release_date, media_type, season, evidence_title
         )
         if result:
             return result
@@ -749,7 +945,12 @@ class MatchingMixin:
         # 处理完全匹配
         if exact_matches:
             return self._select_from_exact_matches(
-                title, exact_matches, partial_matches, release_date, season
+                title,
+                exact_matches,
+                partial_matches,
+                release_date,
+                season,
+                evidence_title,
             )
 
         # 处理部分匹配
@@ -890,17 +1091,19 @@ class MatchingMixin:
         return False
 
     def _date_diff(self, date1: str, date2: str) -> int:
-        """计算两个日期之间的天数差（解析结果记忆化）
+        """计算两个日期之间的天数差；解析失败时返回 999999 哨兵
 
-        原实现对每条候选都重新 strptime 两次；日期解析是纯函数，
-        记忆化后语义完全一致，仅消除常量上的重复解析。
+        实现统一委托 ``date_diff_days``，避免两套解析逻辑各自演化。
+        哨兵把「日期缺失」与「日期差极大」压成同一个值，用于候选择优
+        可以接受（两者都算最差）；但**日期硬校验**必须直接用
+        ``date_diff_days`` 并显式区分 None，否则会把「条目没有放送日期」
+        误判成「日期差 55 年」而误杀（参见 #4）。
         """
-        d1 = _coerce_ymd(date1)
-        d2 = _coerce_ymd(date2)
-        if d1 is None or d2 is None:
+        diff = date_diff_days(date1, date2)
+        if diff is None:
             logger.debug(f"日期解析失败，按不匹配处理: {date1!r} / {date2!r}")
             return 999999  # 返回一个非常大的数字表示不匹配
-        return abs((d2 - d1).days)
+        return diff
 
     def _calculate_match_info(
         self, item: dict, title: str, ori_title: str = None, release_date: str = None

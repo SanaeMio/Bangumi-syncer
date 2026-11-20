@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import random
@@ -36,6 +37,7 @@ import re
 import sqlite3
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -57,10 +59,43 @@ DEFAULT_SEED = 20260908
 DEFAULT_N = 33  # 每场景用例数（9 个场景 → 约 300 条）
 DEFAULT_DISTRACTORS = 10  # 每个目标条目附带的易混淆干扰条目数
 
+# S3 的后缀写法轮转。四类真实写法分别落在不同的剥离路径上，只写中文 `第二季`
+# 会让整条「季标被剥离 → 索引命中基础条目 → 季号筛空 → 兜底」的链路零覆盖
+# （SCOPE_BANGUMI_DATA 不剥中文数字，中文写法走的是线性扫描）：
+#   第二季    → 不剥（中文数字），线性扫描 + 兜底
+#   第2季     → 剥（阶段 2），索引路径 + 兜底
+#   Season 2  → 剥（阶段 1），索引路径 + 兜底
+#   2nd Season→ 不剥（bangumi_data 只认 Season N），线性扫描
+#   S2        → 剥（阶段 1），索引路径 + 兜底
+#   第2期     → 剥（阶段 2），索引路径 + 兜底
+SEASON_WRITINGS: tuple[str, ...] = (
+    "第二季",
+    "第2季",
+    "Season 2",
+    "2nd Season",
+    "S2",
+    "第2期",
+)
+
+
+def _s3_suffix(base_title: str, i: int) -> str:
+    """S3 的后缀选择：条目自身已声明季号时只能配不剥离的中文写法。
+
+    ``ゆるキャン△ SEASON3`` 这类样本再加 ``Season 2`` 会让标题同时声明
+    第 3 季与第 2 季，``extract_explicit_season`` 取到 3、与请求的 season=2
+    冲突，兜底拒绝 —— 那是构造矛盾，不是引擎缺陷。
+    """
+    from app.utils.season_suffix import SCOPE_BANGUMI_DATA, has_season_marker
+
+    if has_season_marker(base_title, SCOPE_BANGUMI_DATA):
+        return SEASON_WRITINGS[0]
+    return SEASON_WRITINGS[i % len(SEASON_WRITINGS)]
+
+
 SCENARIOS: dict[str, str] = {
     "S1_原名精确": "媒体库推送 JP 原名 + 首播日期，期望命中自身",
     "S2_中文名精确": "媒体库推送中文名 + 首播日期，期望命中自身",
-    "S3_季后缀": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+    "S3_季后缀": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
     "S4_无日期": "原名但无首播日期（年份消歧失效），期望命中自身",
     "S5_剧场版前缀剥离": "取「劇場版 X」条目，用剥离前缀后的 X 查询",
     "S7_短标题碰撞": "短标题（<=5 字）易被长标题包含，期望命中自身",
@@ -123,6 +158,79 @@ def _pick(pool: list[Any], want: int, rnd: random.Random) -> list[Any]:
     return [pool[i] for i in sorted(rnd.sample(range(len(pool)), want))]
 
 
+# S12 构造守卫用到的常量：与 app/utils/bangumi_data/matching.py 对齐
+# （_DATE_PREFERENCE_WINDOW_DAYS / _EXACT_MATCH_DATE_TOLERANCE_DAYS），改动那边需同步
+_S12_PREF_WINDOW = 90
+_S12_GUARD_DAYS = 180
+_S12_SEASON_RE = re.compile(
+    r"\s*(第\s*[0-9一二三四五六七八九十]+\s*[期季部]"
+    r"|[0-9]+(?:st|nd|rd|th)\s+Season|\d+期|[IVX]+$|Season\s*\d+)",
+    re.IGNORECASE,
+)
+_S12_MOVIE_RE = re.compile(r"^(劇場版|剧场版|映画|劇場総集編|剧场总集编)\s*")
+
+
+def _as_day(s: str) -> datetime | None:
+    try:
+        return datetime.strptime((s or "")[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+@functools.cache
+def _family_key(title: str) -> str:
+    """剥掉剧场版前缀与季后缀后的「同族」键"""
+    t = _S12_MOVIE_RE.sub("", title or "").strip()
+    t = _S12_SEASON_RE.sub("", t).strip()
+    return re.sub(r"[\s　]+", "", t).lower()
+
+
+def _title_related(a: str, b: str) -> bool:
+    """两条标题是否可能互相部分匹配（续作 / 衍生 / 总集篇）"""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    ka, kb = _family_key(a), _family_key(b)
+    if ka and ka == kb:
+        return True
+    # 互为子串：要求长度差 >= 2，避免单字碰撞把不相关条目算进来
+    if len(a) >= 3 and len(b) - len(a) >= 2 and a in b:
+        return True
+    if len(b) >= 3 and len(a) - len(b) >= 2 and b in a:
+        return True
+    return False
+
+
+def _s12_reject(items: list[dict], target: dict, day: str) -> str:
+    """S12 目标是否会让漂移日期指向别的条目；返回拒绝原因（空串=通过）"""
+    d = _as_day(day)
+    begin, end = _as_day(_begin(target)), _as_day(target.get("end") or "")
+    if not d or not begin:
+        return "no_date"
+    if not end:
+        return "no_end"
+    if (d - end).days < _S12_GUARD_DAYS:
+        return "own_span_too_long"
+    tid = _bgm_id(target)
+    for other in items:
+        if _bgm_id(other) == tid:
+            continue
+        if not _title_related(target.get("title", ""), other.get("title", "")):
+            continue
+        ob, oe = _as_day(_begin(other)), _as_day(other.get("end") or "")
+        if not ob:
+            continue
+        oe = oe or ob
+        if (
+            ob - timedelta(days=_S12_PREF_WINDOW)
+            <= d
+            <= oe + timedelta(days=_S12_PREF_WINDOW)
+        ):
+            return "near_variant"
+    return ""
+
+
 # =====================================================================
 # L1：bangumi-data 离线黄金集
 # =====================================================================
@@ -174,9 +282,11 @@ def build_l1_cases(items: list[dict], n: int, rnd: random.Random) -> list[dict]:
     for it in _pick(zh_pool, n, rnd):
         cases.append(mk("S2_中文名精确", it, _zh(it)))
 
-    # S3：季后缀
-    for it in _pick(usable, n, rnd):
-        cases.append(mk("S3_季后缀", it, f"{it['title']} 第二季", season=2))
+    # S3：季后缀（写法轮转，见 SEASON_WRITINGS）
+    for i, it in enumerate(_pick(usable, n, rnd)):
+        cases.append(
+            mk("S3_季后缀", it, f"{it['title']} {_s3_suffix(it['title'], i)}", season=2)
+        )
 
     # S5：剧场版前缀剥离（推送剥离后的名字，剧场版本身与同名条目都算对）
     movie_re = re.compile(r"^(劇場版|剧场版|映画)\s*")
@@ -234,15 +344,34 @@ def build_l1_cases(items: list[dict], n: int, rnd: random.Random) -> list[dict]:
     # S12：日期漂移（首播日期偏移 +400 天）
     #   精确索引的日期门槛是 180 天，偏移 400 天必然回退线性扫描，
     #   用来锁住「索引命中 vs 扫描兜底」这条分界。
-    from datetime import datetime, timedelta
-
-    for it in _pick(usable, n, rnd):
+    #
+    #   构造约束（踩过的坑）：只加 400 天不够，漂移日期必须**只可能指向目标自身**。
+    #   MFゴースト 那条就翻在这里：请求日 2024-11-03 正是续作 S2 的第 5 集播出日，
+    #   日期择优按设计把精确匹配的 S1 换成部分匹配的 S2，于是 oracle 与引擎长期
+    #   矛盾，还被当成引擎缺陷查了一轮。判据见 _s12_reject：
+    #     (a) 漂移日期距目标自身 end >= 180 天（真跨过门槛，否则没测到漂移）
+    #     (b) 漂移日期不落在任何同族标题条目的 [begin-90, end+90] 内
+    #   不合格的候选跳过并补采，保持场景条数仍是 n。
+    s12_pool = _pick(usable, n * 4, rnd)
+    s12_skipped: dict[str, int] = {}
+    s12_picked = 0
+    for it in s12_pool:
+        if s12_picked >= n:
+            break
         try:
             base = datetime.strptime(_begin(it), "%Y-%m-%d")
         except ValueError:
             continue
         drifted = (base + timedelta(days=400)).strftime("%Y-%m-%d")
+        reason = _s12_reject(usable, it, drifted)
+        if reason:
+            s12_skipped[reason] = s12_skipped.get(reason, 0) + 1
+            continue
         cases.append(mk("S12_日期漂移", it, it["title"], release_date=drifted))
+        s12_picked += 1
+    if s12_skipped:
+        total = sum(s12_skipped.values())
+        print(f"[gen] S12 跳过 {total} 条构造不安全候选: {s12_skipped}")
 
     # S13：负例（数据库中不存在的标题，期望不命中）
     #   防止「为提升召回而放宽阈值」导致凭空匹配；这类回归在正例集上
@@ -284,21 +413,44 @@ def build_fixture_items(
 
     为什么要带干扰项：黄金集的价值一半在于「不该被误吸走」。若子集中只有
     目标条目，任何算法退化都表现为命中正确，闸门形同虚设。
+
+    **同一个 bangumi id 可能挂着多条 bangumi-data 记录**：同一个 subject 有
+    时按语言拆成 ``lang=ja``（title 为原文、中文名在 titleTranslate）与
+    ``lang=zh-Hans``（title 就是中文名、没有翻译）两条，也有两条同语言的
+    重复登记（``Fate/strange Fake`` 与其 ``(TVシリーズ)``）。旧实现用
+    ``{_bgm_id(it): it}`` 建立在后覆盖，一个 id 只留最后一条，于是被媒体库
+    当作标题的那一半（常常正是中文名那条）整条消失 ——
+    ``銀の守墓り`` / ``Bloodivores`` 两条 L1 用例就是这么失败的。
+
+    因此改为**按 id 整组收录**：一个 id 要么全收，要么不收。只收其中一条
+    会让 fixture 自己制造「同 id 两条标题不同」的假象，也会让候选列表出现
+    重复 id 却缺另一半标题。
     """
     from golden_helpers import slim_item  # noqa: PLC0415
     from rapidfuzz import fuzz, process
 
     titles = [it.get("title", "") for it in items]
 
-    chosen: dict[str, dict] = {}
-    by_id = {_bgm_id(it): it for it in items if _bgm_id(it)}
+    by_id: dict[str, list[dict]] = {}
+    for it in items:
+        sid = _bgm_id(it)
+        if sid:
+            by_id.setdefault(sid, []).append(it)
+
+    chosen: list[dict] = []
+    taken: set[str] = set()
+
+    def take(sid: str) -> None:
+        """整组收录该 id 的全部记录（已收过则跳过）"""
+        if not sid or sid in taken:
+            return
+        taken.add(sid)
+        chosen.extend(by_id.get(sid, []))
+
     for c in cases:
-        sid = c["oracle"]["subject_id"]
-        if sid in by_id:
-            chosen[sid] = by_id[sid]
+        take(c["oracle"]["subject_id"])
         for alt in c["oracle"].get("alt_ids", []):
-            if alt in by_id:
-                chosen[alt] = by_id[alt]
+            take(alt)
 
     # 逐条取 top-K 相似条目作为干扰项（cdist 需要 numpy，这里避免引入依赖）
     for c in cases:
@@ -310,16 +462,15 @@ def build_fixture_items(
         )
         want = k
         for _title, _score, idx in matches:
-            it = items[idx]
-            sid = _bgm_id(it)
-            if not sid or sid in chosen:
+            sid = _bgm_id(items[idx])
+            if not sid or sid in taken:
                 continue
-            chosen[sid] = it
+            take(sid)
             want -= 1
             if want <= 0:
                 break
 
-    fixture = [slim_item(it) for it in chosen.values()]
+    fixture = [slim_item(it) for it in chosen]
     return fixture, len(fixture)
 
 
@@ -490,6 +641,16 @@ def gen_l2(n: int, seed: int, out: Path | None = None) -> int:
         print("[L2] 归档索引构建失败")
         return 1
 
+    # 模糊兜底有两条路径：BK-tree（编辑距离保证单字符 typo 召回）与 trigram
+    # OR 兜底（按相关度排序后的截断候选）。BK-tree 由后台线程异步构建（约
+    # 12s），用例跑得比构建快时会落到 OR 兜底 —— 同一批用例的基线于是取决于
+    # 「构建有没有赶上」，每次重跑都可能差几条（L2-S8 实测 9 条）。
+    # 基线必须记录**稳态**行为，所以这里同步等构建完成；生产稳态同样走
+    # BK-tree 路径（见 set_bktree_enabled 说明）。
+    _conn = archive_title_index._ensure_conn()
+    if _conn is not None and archive_title_index._resolve_use_bktree():
+        archive_title_index._ensure_bktree(_conn)
+
     def _always_on(self) -> None:
         self.set_enabled(True)
 
@@ -608,9 +769,15 @@ def _build_archive_cases(
     ):
         out.append(mk("S2_中文名精确", r, r["name_cn"], ori_title=r["name"]))
 
-    for r in qs(base_sql, (), n):
+    for i, r in enumerate(qs(base_sql, (), n)):
         out.append(
-            mk("S3_季后缀", r, f"{r['name']} 第二季", season=2, ori_title=r["name"])
+            mk(
+                "S3_季后缀",
+                r,
+                f"{r['name']} {_s3_suffix(r['name'], i)}",
+                season=2,
+                ori_title=r["name"],
+            )
         )
 
     for r in qs(

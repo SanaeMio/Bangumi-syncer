@@ -2974,3 +2974,197 @@ class TestFindBangumiIdCandidatesOut:
         )
         assert result is not None
         assert out == []
+
+
+class TestCollectCandidatesDedup:
+    """候选列表按 bangumi id 去重
+
+    bangumi-data 里同一个 subject 可能有两条记录（原文一条 + 中文名一条，
+    或两条重复登记），它们共享同一个 id。不去重时同一条目会占掉多个 top-5
+    名额（实测 Fate/strange Fake 的 5 个位置里 2 个是 443831）。
+    """
+
+    @staticmethod
+    def _item(title: str) -> dict[str, Any]:
+        return {"title": title, "begin": "2020-01-01"}
+
+    def test_same_id_appears_once(self):
+        data = _make_data()
+        cands = data._collect_candidates(
+            [
+                (self._item("銀の守墓り"), "173850", "exact"),
+                (self._item("银之守墓人"), "173850", "exact"),
+            ],
+            [],
+            limit=5,
+        )
+        assert [c["id"] for c in cands] == ["173850"]
+
+    def test_dedup_does_not_shrink_final_limit(self):
+        """去重腾出的名额要由部分匹配补上，而不是提前 return"""
+        data = _make_data()
+        exact = [
+            (self._item("甲"), "1", "exact"),
+            (self._item("甲-重复"), "1", "exact"),
+            (self._item("乙"), "2", "exact"),
+            (self._item("丙"), "3", "exact"),
+            (self._item("丁"), "4", "exact"),
+        ]
+        partial = [(self._item("戊"), 0.9, "5")]
+        cands = data._collect_candidates(exact, partial, limit=5)
+        assert [c["id"] for c in cands] == ["1", "2", "3", "4", "5"]
+
+    def test_partial_dedup_keeps_highest_score(self):
+        """部分匹配按分数降序，去重保留首个 = 最高分那条"""
+        data = _make_data()
+        cands = data._collect_candidates(
+            [],
+            [(self._item("低分"), 0.6, "9"), (self._item("高分"), 0.95, "9")],
+            limit=5,
+        )
+        assert len(cands) == 1
+        assert cands[0]["score"] == 0.95
+        assert cands[0]["name"] == "高分"
+
+
+class TestBuildFixtureItems:
+    """离线夹具必须保留同 id 的全部记录
+
+    旧实现 ``{_bgm_id(it): it}`` 一个 id 只留最后一条，会把「中文名那条」
+    整条丢掉；媒体库的请求标题常常正是被丢掉的那一半。
+    """
+
+    @staticmethod
+    def _module():
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[2] / "scripts" / "gen_golden_cases.py"
+        spec = importlib.util.spec_from_file_location("gen_golden_cases_ut", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_same_id_keeps_both_language_records(self):
+        items = [
+            {
+                "title": "銀の守墓り",
+                "titleTranslate": {"zh-Hans": ["银之守墓人"]},
+                "begin": "2017-04-01",
+                "sites": [{"site": "bangumi", "id": "173850"}],
+            },
+            {
+                "title": "银之守墓人",
+                "begin": "2017-04-01",
+                "sites": [{"site": "bangumi", "id": "173850"}],
+            },
+            {
+                "title": "无关干扰",
+                "begin": "2019-01-01",
+                "sites": [{"site": "bangumi", "id": "999"}],
+            },
+        ]
+        cases = [
+            {
+                "input": {"title": "银之守墓人"},
+                "oracle": {"subject_id": "173850", "alt_ids": []},
+            }
+        ]
+        fixture, n = self._module().build_fixture_items(items, cases, k=1)
+        titles = [it["title"] for it in fixture]
+        assert n == len(fixture)
+        assert "銀の守墓り" in titles
+        assert "银之守墓人" in titles
+        assert titles.count("銀の守墓り") == 1
+
+
+class TestOriginalTitlePriority:
+    """请求**原名**与候选原名逐字相同时，优先于 media_type 旁证
+
+    L1-S4_无日期-039（Candy☆Boy）的实际数据：95419 的 title 与请求原名逐字
+    相等，但它的 zh-Hans 别名是 ``Candy☆Boy OVA``；2829 的 title 是大小写
+    不同的 ``Candy boy``，别名恰好就是请求名。media_type 择优只从别名里找
+    类型词，于是把 95419 判成 OVA、改选了**另一部作品** 2829。
+
+    结论：媒体库给的原名与条目原名逐字一致，比「别名里含 OVA / 剧场版」这种
+    旁证更硬。但只认 ori_title —— title 常常是中文名，它命中候选的原文标题只
+    说明「这个名字被当成原名登记了」，不足以推翻类型识别。
+    """
+
+    OVA_ID = "95419"
+    TV_ID = "2829"
+
+    @staticmethod
+    def _data():
+        data = _make_data()
+        data._title_index = {
+            "Candy☆Boy": [
+                {
+                    "title": "Candy☆Boy",
+                    "titleTranslate": {"zh-Hans": ["Candy☆Boy OVA"]},
+                    "begin": "2007-11-22",
+                    "sites": [{"site": "bangumi", "id": "95419"}],
+                },
+                {
+                    "title": "Candy boy",
+                    "titleTranslate": {"zh-Hans": ["Candy☆Boy", "糖果男孩"]},
+                    "begin": "2008-05-02",
+                    "sites": [{"site": "bangumi", "id": "2829"}],
+                },
+            ]
+        }
+        return data
+
+    def test_original_title_exact_wins_over_media_type(self):
+        data = self._data()
+        result = data._try_exact_match(
+            "Candy☆Boy", "Candy☆Boy", "", media_type="episode"
+        )
+        assert result is not None
+        assert result[0] == self.OVA_ID
+
+    def test_no_ori_title_keeps_media_type_decision(self):
+        """没有原名信号时行为不变：media_type 择优仍是唯一依据"""
+        data = self._data()
+        result = data._try_exact_match("Candy☆Boy", "", "", media_type="episode")
+        assert result is not None
+        assert result[0] == self.TV_ID
+
+
+class TestExactIndexUsesSharedDateDiff:
+    """O(1) 标题索引路径的日期比较必须走 ``_date_diff``
+
+    历史实现里索引路径自带一份 ``abs((d1 - d2).days)``，与线性扫描路径的
+    ``_date_diff`` 构成两套口径。重复代码本身无害，问题是**分叉**：任何日期
+    语义调整只要落在 ``_date_diff`` 里，索引路径就会静默绕过 —— 实测
+    ``MFゴースト`` 在索引路径按首播日 400 天否决、在扫描路径按外推 288 天通过，
+    同一请求在同一次调用里得到两种答案。
+    """
+
+    @staticmethod
+    def _data(begin: str):
+        data = _make_data()
+        data._title_index = {
+            "某番": [
+                {
+                    "title": "某番",
+                    "begin": begin,
+                    "sites": [{"site": "bangumi", "id": "1"}],
+                }
+            ]
+        }
+        return data
+
+    def test_index_path_skips_when_date_diff_says_too_far(self):
+        data = self._data("2000-01-01")
+        result = data._try_exact_match("某番", None, "2010-01-01", "", 1, "某番")
+        assert result is None
+
+    def test_index_path_honours_overridden_date_diff(self):
+        """把 _date_diff 改成 0 后必须命中 —— 否则说明索引路径没走它"""
+        data = self._data("2000-01-01")
+        data._date_diff = lambda date1, date2: 0
+        result = data._try_exact_match("某番", None, "2010-01-01", "", 1, "某番")
+        assert result is not None
+        assert result[0] == "1"
+        assert result[2] is True

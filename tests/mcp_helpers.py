@@ -11,11 +11,33 @@
 
 from __future__ import annotations
 
+import os
+import stat
+from pathlib import Path
 from typing import Any
 
 from app.mcp.keys import RSAKeyManager
 from app.mcp.provider import BangumiOAuthProvider
 from app.mcp.server import create_mcp_app
+
+
+def assert_private_key_owner_only(path: str | Path) -> None:
+    """断言私钥文件仅属主可读写。
+
+    POSIX 上校验 ``st_mode`` 精确等于 ``0o600``；Windows 的 ``os.chmod`` 只
+    映射「只读」位，``st_mode`` 不反映 NTFS ACL，无法表达 ``0o600``，故退化
+    为「文件存在且当前进程可读」。该平台的私钥保护由 ``data/`` 目录隔离与
+    NTFS 继承 ACL 承担，不能靠位掩码断言。
+
+    Args:
+        path: 私钥文件路径。
+    """
+    target = Path(path)
+    assert target.is_file(), f"私钥文件不存在: {target}"
+    with open(target, "rb") as handle:
+        assert handle.read(1), f"私钥文件为空: {target}"
+    if os.name == "posix":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
 def build_test_mcp_app(

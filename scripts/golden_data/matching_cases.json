@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generated_at": "2026-09-09 13:00:55",
+ "generated_at": "2026-11-17 15:56:55",
  "seed": 20260908,
  "n": 30,
  "source": {
@@ -1426,12 +1426,12 @@
     "title": "马鸪先生的小车"
    },
    "baseline": {
-    "subject_id": "",
-    "match_method": "failed",
-    "match_detail": "",
-    "score": null,
+    "subject_id": "132388",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.96,
     "ambiguous": false,
-    "failure": "Bangumi 搜索无结果"
+    "failure": ""
    }
   },
   {
@@ -1449,12 +1449,12 @@
     "title": "吃鸟瘾"
    },
    "baseline": {
-    "subject_id": "",
-    "match_method": "failed",
-    "match_detail": "",
-    "score": null,
+    "subject_id": "132389",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9285714285714286,
     "ambiguous": false,
-    "failure": "Bangumi 搜索无结果"
+    "failure": ""
    }
   },
   {
@@ -1495,12 +1495,12 @@
     "title": "马罗"
    },
    "baseline": {
-    "subject_id": "",
-    "match_method": "failed",
-    "match_detail": "",
-    "score": null,
+    "subject_id": "132393",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8,
     "ambiguous": false,
-    "failure": "Bangumi 搜索无结果"
+    "failure": ""
    }
   },
   {
@@ -3485,7 +3485,7 @@
    "id": "L2-S3_季后缀-152",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "ねじ巻き精霊戦記 天鏡のアルデラミン 第二季",
+    "title": "ねじ巻き精霊戦記 天鏡のアルデラミン 第2季",
     "ori_title": "ねじ巻き精霊戦記 天鏡のアルデラミン",
     "release_date": "2016-07-08",
     "season": 2,
@@ -3508,7 +3508,7 @@
    "id": "L2-S3_季后缀-153",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "食戟のソーマ OAD 第二季",
+    "title": "食戟のソーマ OAD Season 2",
     "ori_title": "食戟のソーマ OAD",
     "release_date": "2016-05-02",
     "season": 2,
@@ -3531,7 +3531,7 @@
    "id": "L2-S3_季后缀-154",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "劇場版 ソードアート・オンライン -オーディナル・スケール- 第二季",
+    "title": "劇場版 ソードアート・オンライン -オーディナル・スケール- 2nd Season",
     "ori_title": "劇場版 ソードアート・オンライン -オーディナル・スケール-",
     "release_date": "2017-02-18",
     "season": 2,
@@ -3554,7 +3554,7 @@
    "id": "L2-S3_季后缀-155",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "シンドバッド 魔法のランプと動く島 第二季",
+    "title": "シンドバッド 魔法のランプと動く島 S2",
     "ori_title": "シンドバッド 魔法のランプと動く島",
     "release_date": "2016-01-16",
     "season": 2,
@@ -3577,7 +3577,7 @@
    "id": "L2-S3_季后缀-156",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "あまんちゅ！ 第二季",
+    "title": "あまんちゅ！ 第2期",
     "ori_title": "あまんちゅ！",
     "release_date": "2016-07-08",
     "season": 2,
@@ -3623,7 +3623,7 @@
    "id": "L2-S3_季后缀-158",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "KING OF PRISM by PrettyRhythm 第二季",
+    "title": "KING OF PRISM by PrettyRhythm 第2季",
     "ori_title": "KING OF PRISM by PrettyRhythm",
     "release_date": "2016-01-09",
     "season": 2,
@@ -3669,7 +3669,7 @@
    "id": "L2-S3_季后缀-160",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "アノコトイイコト 第二季",
+    "title": "アノコトイイコト 2nd Season",
     "ori_title": "アノコトイイコト",
     "release_date": "2015-10-02",
     "season": 2,
@@ -3692,7 +3692,7 @@
    "id": "L2-S3_季后缀-161",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "アクティヴレイド -機動強襲室第八係- 第二季",
+    "title": "アクティヴレイド -機動強襲室第八係- S2",
     "ori_title": "アクティヴレイド -機動強襲室第八係-",
     "release_date": "2016-01-07",
     "season": 2,
@@ -3761,7 +3761,7 @@
    "id": "L2-S3_季后缀-164",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "キズナイーバー 第二季",
+    "title": "キズナイーバー 第2季",
     "ori_title": "キズナイーバー",
     "release_date": "2016-04-09",
     "season": 2,
@@ -3784,7 +3784,7 @@
    "id": "L2-S3_季后缀-165",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "茶啊二中 第二季",
+    "title": "茶啊二中 Season 2",
     "ori_title": "茶啊二中",
     "release_date": "2014-09-03",
     "season": 2,
@@ -3807,7 +3807,7 @@
    "id": "L2-S3_季后缀-166",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "茶啊二中第二季 第二季",
+    "title": "茶啊二中第二季 2nd Season",
     "ori_title": "茶啊二中第二季",
     "release_date": "2015-08-17",
     "season": 2,
@@ -3830,7 +3830,7 @@
    "id": "L2-S3_季后缀-167",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "三毛流浪记 第二季",
+    "title": "三毛流浪记 S2",
     "ori_title": "三毛流浪记",
     "release_date": "2006-01-26",
     "season": 2,
@@ -3853,7 +3853,7 @@
    "id": "L2-S3_季后缀-168",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "くまみこ 第二季",
+    "title": "くまみこ 第2期",
     "ori_title": "くまみこ",
     "release_date": "2016-04-03",
     "season": 2,
@@ -3899,7 +3899,7 @@
    "id": "L2-S3_季后缀-170",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "黒執事 Book of the Atlantic 第二季",
+    "title": "黒執事 Book of the Atlantic 第2季",
     "ori_title": "黒執事 Book of the Atlantic",
     "release_date": "2017-01-21",
     "season": 2,
@@ -3922,7 +3922,7 @@
    "id": "L2-S3_季后缀-171",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "この男子、魔法がお仕事です。 第二季",
+    "title": "この男子、魔法がお仕事です。 Season 2",
     "ori_title": "この男子、魔法がお仕事です。",
     "release_date": "2016-02-05",
     "season": 2,
@@ -3945,7 +3945,7 @@
    "id": "L2-S3_季后缀-172",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "かみなり坊やピッカリ・ビー 第二季",
+    "title": "かみなり坊やピッカリ・ビー 2nd Season",
     "ori_title": "かみなり坊やピッカリ・ビー",
     "release_date": "1967-04-01",
     "season": 2,
@@ -3968,7 +3968,7 @@
    "id": "L2-S3_季后缀-173",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "アルスラーン戦記 風塵乱舞 第二季",
+    "title": "アルスラーン戦記 風塵乱舞 S2",
     "ori_title": "アルスラーン戦記 風塵乱舞",
     "release_date": "2016-07-03",
     "season": 2,
@@ -3991,7 +3991,7 @@
    "id": "L2-S3_季后缀-174",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "東京喰種トーキョーグール：re 第二季",
+    "title": "東京喰種トーキョーグール：re 第2期",
     "ori_title": "東京喰種トーキョーグール：re",
     "release_date": "2018-04-03",
     "season": 2,
@@ -4037,7 +4037,7 @@
    "id": "L2-S3_季后缀-176",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "ハックルベリィの冒険 第二季",
+    "title": "ハックルベリィの冒険 第2季",
     "ori_title": "ハックルベリィの冒険",
     "release_date": "1976-01-02",
     "season": 2,
@@ -4060,7 +4060,7 @@
    "id": "L2-S3_季后缀-177",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "Двенадцать месяцев 第二季",
+    "title": "Двенадцать месяцев Season 2",
     "ori_title": "Двенадцать месяцев",
     "release_date": "1956-01-01",
     "season": 2,
@@ -4083,7 +4083,7 @@
    "id": "L2-S3_季后缀-178",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "Les Miserables 第二季",
+    "title": "Les Miserables 2nd Season",
     "ori_title": "Les Miserables",
     "release_date": "1992-12-21",
     "season": 2,
@@ -4106,7 +4106,7 @@
    "id": "L2-S3_季后缀-179",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "火力少年王之传奇再现 第二季",
+    "title": "火力少年王之传奇再现 S2",
     "ori_title": "火力少年王之传奇再现",
     "release_date": "2014-09-09",
     "season": 2,
@@ -4129,7 +4129,7 @@
    "id": "L2-S3_季后缀-180",
    "scenario": "S3_季后缀",
    "input": {
-    "title": "火力少年王之传奇再现续集 第二季",
+    "title": "火力少年王之传奇再现续集 第2期",
     "ori_title": "火力少年王之传奇再现续集",
     "release_date": "2015-03-28",
     "season": 2,
@@ -5521,8 +5521,8 @@
    },
    "baseline": {
     "subject_id": "496081",
-    "match_method": "archive",
-    "match_detail": "exact",
+    "match_method": "bangumi_data",
+    "match_detail": "",
     "score": 1.0,
     "ambiguous": false,
     "failure": ""

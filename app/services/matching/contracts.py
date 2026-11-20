@@ -38,6 +38,20 @@ SOURCE_API_SEARCH = "api_search"
 SOURCE_BANGUMI_DATA = "bangumi_data"
 SOURCE_CUSTOM_MAPPING = "custom_mapping"
 
+# 歧义判定默认容差：top1 与 top2 分数差小于该值即视为难分伯仲。
+# 单一来源：arbiter 的默认策略与 APISearchStep 的歧义标记共用，避免只改一处
+# 导致「配置了 ambiguous_margin 但未启用 arbiter 时不生效」。
+DEFAULT_AMBIGUOUS_MARGIN = 0.05
+
+# ===== 匹配步骤状态（StepOutcome.status 的合法取值） =====
+# 生产侧与消费侧共用：状态是契约，写成裸字符串时一个 typo 会让该步静默落到
+# 两条管线都不处理的分支（既不算命中也不算终止），排查代价很高。
+STATUS_HIT = "hit"
+STATUS_MISS = "miss"
+STATUS_ERROR = "error"
+STATUS_LOW_CONFIDENCE = "low_confidence"
+STATUS_SKIPPED = "skipped"
+
 # 集数类型（对齐 Bangumi API 的 episode type 定义）——
 # canonical 定义已收拢至 bangumi_constants.EPISODE_TYPE_*，此处保留
 # 项目内既有短名作为别名（避免调用点批量改名）

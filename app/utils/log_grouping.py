@@ -13,7 +13,10 @@ from typing import Any
 RUN_ID_RE = re.compile(r"\[run:([^\]]+)\]")
 REQUEST_ID_RE = re.compile(r"\[req:([^\]]+)\]")
 BATCH_ID_RE = re.compile(r"\[batch:([^\]]+)\]")
-TIMESTAMP_RE = re.compile(r"^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]")
+# 日志行时间戳。毫秒**可选**：本程序日志固定带 3 位毫秒，但历史日志与
+# 外部导入的日志可能没有 —— 放宽到可选后，日志页与分组解析对同一行的
+# 判定一致（此前 mcp/tools 另有更强的一份，两处口径不同）。
+TIMESTAMP_RE = re.compile(r"^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\]")
 LEVEL_RE = re.compile(r"\[(DEBUG|INFO ?|WARN(?:ING)? ?|ERROR)\]")
 
 SYNC_START_RE = re.compile(
@@ -57,10 +60,26 @@ def _is_login_orphan(line: str) -> bool:
 
 
 def _parse_timestamp_dt(ts: str) -> datetime | None:
-    try:
-        return datetime.strptime(ts, "%Y/%m/%d %H:%M:%S.%f")
-    except ValueError:
-        return None
+    # 毫秒可选（TIMESTAMP_RE 同时接受两种写法）：历史日志与外部导入的日志
+    # 常没有毫秒，只按 .%f 解析会让这些行的 duration_ms 静默变成 None。
+    for fmt in ("%Y/%m/%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(ts, fmt)
+        except ValueError:
+            continue
+    # 小数秒位数超过 6（TIMESTAMP_RE 放行 ``\.\d+``，而 %f 只吃 1~6 位）：
+    # 截断到微秒再解析。不截断的话整行会解析失败，duration_ms 静默变 None，
+    # 而分组本身还在 —— 排查时最难发现的那一类丢失。
+    head, dot, frac = ts.partition(".")
+    if dot and head:
+        digits = "".join(ch for ch in frac if ch.isdigit())
+        try:
+            return datetime.strptime(head, "%Y/%m/%d %H:%M:%S").replace(
+                microsecond=int((digits + "000000")[:6])
+            )
+        except ValueError:
+            return None
+    return None
 
 
 def _duration_ms(timestamps: list[str]) -> int | None:

@@ -13,6 +13,13 @@ from typing import Any
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import (
+    DEFAULT_AMBIGUOUS_MARGIN,
+    STATUS_ERROR,
+    STATUS_HIT,
+    STATUS_LOW_CONFIDENCE,
+    STATUS_MISS,
+)
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchCandidate
 from app.utils.bangumi_constants import (
@@ -109,7 +116,7 @@ class APISearchStep(MatchStepBase):
         if not bgm:
             ctx.failure_detail = "无法创建 Bangumi API 实例，无法搜索条目"
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason="无法创建 Bangumi API 实例",
                 inputs={
                     "title": item.title,
@@ -198,7 +205,7 @@ class APISearchStep(MatchStepBase):
             if not bgm_data:
                 ctx.failure_detail = "Bangumi 搜索无结果"
                 return StepOutcome(
-                    status="miss",
+                    status=STATUS_MISS,
                     reason="Bangumi API 搜索无结果",
                     inputs=inputs,
                     outputs={
@@ -317,7 +324,7 @@ class APISearchStep(MatchStepBase):
             if not verdict.accepted:
                 ctx.failure_detail = verdict.failure_detail
                 return StepOutcome(
-                    status="low_confidence",
+                    status=STATUS_LOW_CONFIDENCE,
                     subject_id=anchor_id,
                     reason=verdict.reason,
                     score=verdict.score,
@@ -352,8 +359,9 @@ class APISearchStep(MatchStepBase):
                 ctx.match_method_detail = ctx.match_method_detail or "exact"
             else:
                 ctx.match_method_detail = out_meta.get("variant_method", "") or ""
-            # 歧义标记：top1/top2 分数差 < 0.05 时置 True，编排器据此发 match_ambiguous 通知
-            # （原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器）
+            # 歧义标记：top1/top2 分数差小于 DEFAULT_AMBIGUOUS_MARGIN 时置 True，
+            # 编排器据此发 match_ambiguous 通知（与 arbiter 的默认策略同源），
+            # 原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器。
             # 按 score 降序取 top-2，与 _collect_candidates_from_trace 行为一致（P1-2）：
             # 改选后 post_candidates 可能追加更高分候选，若仍用 candidates[0]/[1]（按
             # bgm_data 原始顺序）会漏判歧义。
@@ -366,7 +374,7 @@ class APISearchStep(MatchStepBase):
                 sorted_by_score = sorted(candidates, key=_safe_score, reverse=True)
                 top1_s = _safe_score(sorted_by_score[0])
                 top2_s = _safe_score(sorted_by_score[1])
-                ctx.is_ambiguous = (top1_s - top2_s) < 0.05
+                ctx.is_ambiguous = (top1_s - top2_s) < DEFAULT_AMBIGUOUS_MARGIN
 
             final_reason = reason
             if post_reason:
@@ -376,7 +384,7 @@ class APISearchStep(MatchStepBase):
                 final_reason = f"{final_reason}；{verdict.reason}"
 
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=str(bgm_data[0]["id"]),
                 reason=final_reason,
                 score=verdict.score,
@@ -428,7 +436,7 @@ class APISearchStep(MatchStepBase):
             ) = _import_sync_helpers()
             ctx.failure_detail = detail
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason=detail,
                 inputs=inputs,
                 outputs={"subject_id": "", "error": str(e)},
@@ -658,7 +666,7 @@ class APISearchStep(MatchStepBase):
             after_id = after.get("id")
             after_name = after.get("name_cn") or after.get("name") or ""
             outcome = StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=str(after_id) if after_id is not None else None,
                 reason=post_reason or "搜索后处理改选",
                 inputs={

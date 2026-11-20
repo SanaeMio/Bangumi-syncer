@@ -17,9 +17,10 @@ import re
 import httpx
 
 from ...core.logging import logger
+from ...utils.episode_title import has_episode_marker, parse_season_episode
 from ...utils.http_base import AsyncHttpClient
 from ...utils.media_type_detector import MOVIE_KEYWORD_RE as _MOVIE_KEYWORD_RE
-from ...utils.text_constants import CN_NUM
+from ...utils.title_patterns import YEAR_TOKEN
 from .models import FongmiDevice, FongmiWatchRecord
 
 # 端口与超时
@@ -33,128 +34,29 @@ _DISCOVER_SEMAPHORE = 100  # 网段扫描并发上限
 # 直播流标记（Long.MIN_VALUE）
 _LONG_MIN = -9223372036854775808
 
-# ===== 集数/季号解析 =====
+# ===== 集号/季号解析 =====
 #
-# 季号策略（方案 B）：
-#   仅当出现 *明确的* 季号标记（S02E03 中 S>1、"第二季"、"Season 2"）才返回 season>1；
-#   S01/S00/无标记 一律视为 season=1，交给 SyncService 沿 Bangumi 续集链查找。
-#   避免源站统一标记为 S01 时误匹配到某一具体季。
-#
-# 集号优先级：SxxExx > EP/Exx > 第N集 > #N > [N] > 文件名兜底
-_SEASON_EP_RE = re.compile(r"[Ss](\d{1,2})\s*\.?[Ee](\d{1,3})", re.IGNORECASE)
-_EP_RE = re.compile(r"\b[Ee][Pp]?[\s.\-_]?\s*0*(\d{1,3})\b", re.IGNORECASE)
-_CN_EP_RE = re.compile(r"第\s*0*(\d{1,3})\s*[集话話章回]")
-_HASH_EP_RE = re.compile(r"#\s*0*(\d{1,3})\b")
-_BRACKET_EP_RE = re.compile(r"[\[【(]\s*0*(\d{1,3})\s*[\]】)]")
-
-# 季号标记（仅当 N>1 时才视为多季）
-_SEASON_CN_RE = re.compile(r"第\s*([一二三四五六七八九十2-9])\s*[季期]")
-_SEASON_EN_RE = re.compile(r"[Ss]eason\s*0*([2-9]\d?)", re.IGNORECASE)
-
-# 文件名清理用正则
-_BRACKET_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】|《[^》]*》")
-_SIZE_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:KB|MB|GB|TB)", re.IGNORECASE)
-_RESOLUTION_RE = re.compile(
-    r"\b(?:4K|2160P|1080P|720P|480P|360P|UHD|FHD|HD|HDR)\b", re.IGNORECASE
-)
-_RANGE_RE = re.compile(r"\b\d{1,4}\s*-\s*\d{1,4}\b")
-_FIRST_NUM_RE = re.compile(r"\d{1,3}")
-
-
-def _extract_episode_from_filename(text: str) -> int:
-    """文件名兜底：清理后取第一个 1-3 位数字。
-
-    移除扩展名、方括号内容、文件大小、分辨率、合集范围、季号标记后取首个数字。
-    """
-    if not text:
-        return 0
-    filename = text.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    filename = re.sub(r"\.\w+$", "", filename)
-    filename = _BRACKET_RE.sub(" ", filename)
-    filename = _SIZE_RE.sub(" ", filename)
-    filename = _RESOLUTION_RE.sub(" ", filename)
-    filename = _RANGE_RE.sub(" ", filename)
-    filename = _SEASON_CN_RE.sub(" ", filename)
-    filename = _SEASON_EN_RE.sub(" ", filename)
-    m = _FIRST_NUM_RE.search(filename)
-    if m:
-        n = int(m.group())
-        if 1 <= n <= 999:
-            return n
-    return 0
-
-
-def _detect_explicit_season(text: str) -> int:
-    """检测明确的季号标记，仅在 N>1 时返回 N，否则返回 1。"""
-    if not text:
-        return 1
-    m = _SEASON_CN_RE.search(text)
-    if m:
-        token = m.group(1)
-        n = CN_NUM.get(token) or (int(token) if token.isdigit() else 0)
-        if n > 1:
-            return n
-    m = _SEASON_EN_RE.search(text)
-    if m:
-        n = int(m.group(1))
-        if n > 1:
-            return n
-    return 1
+# 解析实现统一在 app.utils.episode_title（各源共用同一套优先级、词边界与上界）。
+# 这里只保留 parse_episode_info 这个历史入口名 —— 它是 parse_season_episode 的
+# 二参数特例：/media 只有 url 与 artist 两个字段可用，且文本顺序即优先级。
 
 
 def parse_episode_info(url: str, artist: str) -> tuple[int, int]:
     """从 /media 的 url 与 artist 解析 (season, episode)。
 
     方案 B：S01/S00/无标记 → season=1；仅 S>1 或「第二季」「Season 2」→ season>1。
-    集号优先级：url > artist；缺失回退为 1。
+    集号优先级：SxxExx > EP/Exx > 第N集 > #N > [N] > 文件名兜底，见
+    :func:`app.utils.episode_title.parse_season_episode`。
     """
-    sources = [s for s in (url or "", artist or "") if s]
-
-    # 1. SxxExx（同时解析 season）
-    for text in sources:
-        m = _SEASON_EP_RE.search(text)
-        if m:
-            s = int(m.group(1))
-            ep = max(1, int(m.group(2)))
-            return (s if s > 1 else 1, ep)
-
-    # 2-6. 仅解析集号
-    episode = 0
-    for pattern in (_EP_RE, _CN_EP_RE, _HASH_EP_RE, _BRACKET_EP_RE):
-        if episode:
-            break
-        for text in sources:
-            m = pattern.search(text)
-            if m:
-                episode = max(1, int(m.group(1)))
-                break
-
-    # 6. 文件名兜底
-    if not episode:
-        for text in sources:
-            ep = _extract_episode_from_filename(text)
-            if ep > 0:
-                episode = ep
-                break
-
-    if not episode:
-        episode = 1
-
-    # 季号判定
-    season = 1
-    for text in sources:
-        s = _detect_explicit_season(text)
-        if s > 1:
-            season = s
-            break
-
-    return season, episode
+    return parse_season_episode(url, artist)
 
 
 # ===== fongmi 媒体类型判定（文件名结构优先） =====
 
-# 电影常见容器/命名特征：无季集结构且带年份、或含 4K/BluRay 等单片标记
-_MOVIE_YEAR_RE = re.compile(r"(?:^|[\s._\-\[(])(19|20)\d{2}(?:[\s._\-\])]|$)")
+# 电影常见容器/命名特征：无季集结构且带年份、或含 4K/BluRay 等单片标记。
+# 年份词元来自 title_patterns.YEAR_TOKEN；这里额外要求前后是文件名分隔符，
+# 否则「12020」这类串也会被当成年份。捕获组改非捕获（调用方只取真值）。
+_MOVIE_YEAR_RE = re.compile(rf"(?:^|[\s._\-\[(]){YEAR_TOKEN}(?:[\s._\-\])]|$)")
 # 多集/合集标记：出现"第N集""EP..-EP.."或明显的范围，说明是剧集
 _MULTI_EP_RE = re.compile(
     r"[Ee][Pp]?\s*\d{1,3}\s*[-~]\s*[Ee]?[Pp]?\s*\d{1,3}"  # EP01-12
@@ -206,11 +108,8 @@ def detect_media_type_from_media(
 
     # 1. 季集结构 → 剧集（最强信号）
     for text in sources:
-        if _SEASON_EP_RE.search(text):
+        if has_episode_marker(text):
             return "episode"
-        for pattern in (_EP_RE, _CN_EP_RE, _HASH_EP_RE, _BRACKET_EP_RE):
-            if pattern.search(text):
-                return "episode"
 
     # 2. 范围/合集标记 → 剧集
     for text in sources:
