@@ -5,12 +5,18 @@
     color-scheme: light;
 
     --app-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+    --app-duration: 0.2s;
+    --app-duration-fast: 0.14s;
+    --app-duration-enter: 0.36s;
     --app-radius-card: 24px;
     --app-radius-card-sm: 16px;
     --app-radius-pill: 999px;
     --app-radius-input: var(--app-radius-pill);
-    --app-radius-btn: 14px;
+    --app-radius-btn: var(--app-radius-pill);
     --app-radius-shell: 28px;
+    --app-control-h: 2.25rem;
+    --app-ring: 0 0 0 3px rgba(var(--app-primary-rgb), 0.14);
+    --app-switch-thumb: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%23ffffff'/%3E%3C/svg%3E");
     --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.025), 0 3px 10px rgba(15, 23, 42, 0.035);
     --app-shadow-card-hover: 0 2px 4px rgba(15, 23, 42, 0.03), 0 10px 22px rgba(15, 23, 42, 0.05);
     --app-shadow-card-strong: 0 4px 12px rgba(15, 23, 42, 0.05), 0 14px 30px rgba(15, 23, 42, 0.045);
@@ -105,7 +111,7 @@
     --bs-dropdown-link-active-bg: var(--app-primary);
 }
 
-/* btn-primary 跟随主题色 */
+/* btn-primary 跟随主题色：扁平纯色，无投影 */
 .btn-primary {
     --bs-btn-bg: transparent;
     --bs-btn-border-color: transparent;
@@ -116,23 +122,31 @@
     --bs-btn-active-border-color: transparent;
     --bs-btn-disabled-bg: rgba(var(--app-primary-rgb), 0.45);
     --bs-btn-disabled-border-color: transparent;
-    background: var(--app-gradient-primary) !important;
+    background: var(--app-primary) !important;
     border: none !important;
-    box-shadow: 0 2px 10px rgba(var(--app-primary-rgb), 0.22);
-    transition: transform 0.22s var(--app-ease-smooth), box-shadow 0.22s var(--app-ease-smooth),
-        filter 0.22s var(--app-ease-smooth);
+    box-shadow: none;
+    filter: none;
+    transition: background-color var(--app-duration) var(--app-ease-smooth),
+        color var(--app-duration) var(--app-ease-smooth),
+        box-shadow var(--app-duration) var(--app-ease-smooth),
+        transform var(--app-duration-fast) var(--app-ease-smooth);
 }
 
 .btn-primary:hover,
 .btn-primary:focus {
-    filter: brightness(1.03);
-    box-shadow: 0 4px 14px rgba(var(--app-primary-rgb), 0.28);
-    transform: translateY(-1px);
+    background: var(--app-primary-hover) !important;
+    filter: none;
+    box-shadow: none;
+    transform: none;
 }
 
 .btn-primary:active {
-    transform: translateY(0);
-    filter: brightness(0.98);
+    transform: scale(0.97);
+    filter: none;
+}
+
+.btn-primary:focus-visible {
+    box-shadow: var(--app-ring);
 }
 
 /* btn-outline-primary 跟随主题色（柔和描边） */
@@ -388,15 +402,8 @@
     --app-ambient-c: rgba(154, 124, 196, 0.018);
 }
 
-[data-theme="dark"][data-color] .btn-primary,
-[data-theme="dark"][data-color] .sidebar .nav-link.active,
-[data-theme="dark"][data-color] .stats-icon {
+[data-theme="dark"][data-color] .sidebar .nav-link.active {
     filter: saturate(0.96) brightness(0.97);
-}
-
-[data-theme="dark"][data-color] .btn-primary:hover,
-[data-theme="dark"][data-color] .btn-primary:focus {
-    filter: saturate(0.98) brightness(1);
 }
 
 [data-theme="dark"] .btn-primary {

@@ -655,3 +655,28 @@ class TestSidebarNavSlider:
 
         base = _css("theme-base.css")
         assert "font-variant-numeric: tabular-nums" in _block(base, ".stats-value")
+
+
+class TestAppSelectAndFlatControls:
+    """全站控件：胶囊圆角、扁平主按钮、自定义下拉。"""
+
+    def test_button_radius_uses_pill(self):
+        css = _css("theme-base.css")
+        root = _block(css, ":root")
+        assert "--app-radius-btn: var(--app-radius-pill)" in root
+
+    def test_primary_button_is_flat_solid(self):
+        block = _block(_css("theme-base.css"), ".btn-primary")
+        assert "background: var(--app-primary)" in block
+        assert "var(--app-gradient-primary)" not in block
+
+    def test_app_select_script_is_wired(self):
+        base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        js = (_REPO_ROOT / "static/js/app-select.js").read_text(encoding="utf-8")
+        assert "/static/js/app-select.js" in base
+        assert "data-bs-display" in js
+        assert "dropdown-menu__panel" in js
+        assert 'select.form-select' in js
+        # 页面脚本常直接写 select.value = ''，不会触发 change，必须拦截 setter 才能同步按钮文案
+        assert "interceptProgrammaticValue" in js
+        assert 'HTMLSelectElement.prototype, "value"' in js

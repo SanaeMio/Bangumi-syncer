@@ -246,10 +246,10 @@
 }
 
 .pagination .page-item.active .page-link {
-    background: var(--app-gradient-primary);
+    background: var(--app-primary);
     border-color: transparent;
     color: #ffffff;
-    box-shadow: 0 2px 8px rgba(var(--app-primary-rgb), 0.22);
+    box-shadow: none;
 }
 
 .pagination .page-item.disabled .page-link {
@@ -346,7 +346,7 @@
 }
 
 .app-pagination .page-item.active .page-link {
-    background: var(--app-gradient-primary);
+    background: var(--app-primary);
     border-color: transparent;
     color: #fff;
     box-shadow: none;
@@ -354,7 +354,7 @@
 
 .app-pagination .page-item.active .page-link:hover {
     color: #fff;
-    background: var(--app-gradient-primary);
+    background: var(--app-primary);
     border-color: transparent;
 }
 
@@ -1536,8 +1536,8 @@ pre {
 }
 
 .login-form .btn-primary:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(var(--app-primary-rgb), 0.3);
+    transform: none;
+    box-shadow: none;
 }
 
 .login-form .btn-primary:disabled {
