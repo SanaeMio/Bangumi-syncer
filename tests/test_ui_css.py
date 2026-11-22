@@ -676,7 +676,7 @@ class TestAppSelectAndFlatControls:
         assert "/static/js/app-select.js" in base
         assert "data-bs-display" in js
         assert "dropdown-menu__panel" in js
-        assert 'select.form-select' in js
+        assert "select.form-select" in js
         # 页面脚本常直接写 select.value = ''，不会触发 change，必须拦截 setter 才能同步按钮文案
         assert "interceptProgrammaticValue" in js
         assert 'HTMLSelectElement.prototype, "value"' in js
