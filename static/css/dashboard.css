@@ -412,7 +412,7 @@ main.app-main>*:nth-child(12) {
     padding: 0.5rem 0;
     display: flex;
     justify-content: center;
-    overflow: hidden;
+    overflow-x: auto;
 }
 
 .heatmap-grid {
@@ -514,7 +514,7 @@ main.app-main>*:nth-child(12) {
 }
 
 .heatmap-animate .heatmap-cell {
-    animation: heatmap-cell-in 0.2s ease-out backwards;
+    animation: heatmap-cell-in 0.2s var(--app-ease-smooth) backwards;
 }
 
 /* ========== 同步时间线 ========== */
@@ -956,7 +956,7 @@ main.app-main>*:nth-child(12) {
 @keyframes tl-enter {
     from {
         opacity: 0;
-        transform: translateY(14px);
+        transform: translateY(8px);
     }
 
     to {
@@ -967,12 +967,12 @@ main.app-main>*:nth-child(12) {
 
 .tl-track::before {
     transform-origin: top;
-    animation: tl-enter 0.5s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
 }
 
 .tl-item {
     will-change: opacity, transform;
-    animation: tl-enter 0.4s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
 }
 
 .tl-item:nth-child(1) {
@@ -1000,12 +1000,12 @@ main.app-main>*:nth-child(12) {
 }
 
 .tl-dot {
-    animation: tl-enter 0.3s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
     animation-delay: inherit;
 }
 
 .tl-msg {
-    animation: tl-enter 0.3s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
     animation-delay: 0.2s;
 }
 
@@ -1106,6 +1106,7 @@ main.app-main>*:nth-child(12) {
     .tl-track::before,
     .stats-value--updated,
     .tl-item--new::after,
+    .dashboard-edit-hint,
     #records-table tbody tr.records-table-row--enter,
     .records-table-wrap tbody tr.records-table-row--enter,
     .records-table-wrap.records-table-wrap--enter .app-data-table,
@@ -1116,6 +1117,7 @@ main.app-main>*:nth-child(12) {
     .card,
     .stats-card,
     .stats-icon,
+    .dashboard-grid__item,
     .btn,
     .btn-close,
     .form-control,
@@ -1434,6 +1436,17 @@ main.app-main>*:nth-child(12) {
 
     .btn-toolbar:has(.header-theme-switcher) #dashboardCustomizeBtn {
         grid-area: chipCustom;
+    }
+
+    .btn-toolbar:has(.header-theme-switcher) #dashboardManageCardsBtn {
+        grid-area: chipManage;
+    }
+
+    body.is-dashboard-editing main.app-main>.d-flex:has(.header-theme-switcher) {
+        grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+        grid-template-areas:
+            "pageTitle chipCustom chipManage chipTheme chipColor chipInbox"
+            "pageVersion pageVersion pageVersion pageVersion pageVersion pageVersion";
     }
 
     .btn-toolbar:has(.header-theme-switcher) .inbox-dropdown {
@@ -1940,23 +1953,29 @@ main.app-main>*:nth-child(12) {
     width: calc(
         var(--dg-w, 3) * (100% + var(--dg-gap)) / var(--dg-cols) - var(--dg-gap)
     );
-    height: var(--dg-h, 106px);
+    height: var(--dg-h, 128px);
     display: flex;
     flex-direction: column;
     min-width: 0;
+    outline: 1px dashed transparent;
+    outline-offset: 2px;
     transition: top 0.24s var(--app-ease-smooth), left 0.24s var(--app-ease-smooth),
-        width 0.24s var(--app-ease-smooth), height 0.24s var(--app-ease-smooth);
+        width 0.24s var(--app-ease-smooth), height 0.24s var(--app-ease-smooth),
+        outline-color var(--app-duration-fast) linear;
 }
 
-/* 拖动 / 拉伸过程中不做补间，否则卡片会「追手」 */
+/* 被拖 / 拉的卡片跟手；拉伸时盖住邻居，松手后再让位 */
 .dashboard-grid__item.is-dragging,
-.dashboard-grid__item.is-resizing,
-.dashboard-grid.is-interacting .dashboard-grid__item {
+.dashboard-grid__item.is-resizing {
+    z-index: 20;
+    transition: none;
+}
+
+.dashboard-grid:has(.is-resizing) .dashboard-grid__item {
     transition: none;
 }
 
 .dashboard-grid__item.is-dragging {
-    z-index: 20;
     opacity: 0.94;
     cursor: grabbing;
 }
@@ -1965,23 +1984,28 @@ main.app-main>*:nth-child(12) {
     box-shadow: var(--app-shadow-elevated);
 }
 
-/* 卡片本体撑满栅格单元：卡片内部按列布局，内容区可伸缩、可滚动 */
+/* 卡片本体撑满栅格单元：白底跟着 --dg-h 走，左右列底边才齐 */
 .dashboard-card__body {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
     min-height: 0;
     min-width: 0;
+    height: 100%;
 }
 
-.dashboard-card__body > .card {
+.dashboard-grid__item > .dashboard-card__body > .card {
+    display: flex;
     flex: 1 1 auto;
+    flex-direction: column;
     min-height: 0;
     min-width: 0;
     width: 100%;
+    height: 100%;
 }
 
 .dashboard-grid__item .card-body {
+    flex: 1 1 auto;
     min-height: 0;
 }
 
@@ -1999,10 +2023,9 @@ body.is-dashboard-editing .dashboard-grid__item.is-dragging .card-header {
     cursor: grabbing;
 }
 
-/* 编辑态：虚线框提示「这些卡可以摆弄」，退出后恢复原样 */
+/* 编辑态：虚线框提示「这些卡可以摆弄」，退出后恢复原样（短 fade，不位移） */
 body.is-dashboard-editing .dashboard-grid__item:not(.d-none) {
-    outline: 1px dashed rgba(var(--app-primary-rgb), 0.45);
-    outline-offset: 2px;
+    outline-color: rgba(var(--app-primary-rgb), 0.45);
     border-radius: var(--app-radius-card, 0.75rem);
 }
 
@@ -2017,6 +2040,15 @@ body.is-dashboard-editing .dashboard-grid__item.is-resizing {
 .dashboard-grid__item .heatmap-container {
     min-height: 0;
     overflow-y: auto;
+}
+
+.dashboard-grid__item .sync-timeline {
+    flex: 1 1 auto;
+}
+
+.dashboard-grid__item .chart-area {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* 热力图高度固定但格子尺寸不变：剩余空间留在上下两侧，看起来才是居中 */
@@ -2120,9 +2152,34 @@ body.is-dashboard-editing .dashboard-card__resize,
         width 0.16s var(--app-ease-smooth), height 0.16s var(--app-ease-smooth);
 }
 
-/* 窄屏（含平板竖屏）：改为单列堆叠，禁用拖动 / 拉伸 */
+/* 编辑态操作说明：默认隐藏，body.is-dashboard-editing 时短 fade 出现 */
+.dashboard-edit-hint {
+    display: none;
+    margin: 0 0 1rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: var(--app-radius-card-sm);
+    background: rgba(var(--app-primary-rgb), 0.08);
+    border: 1px solid rgba(var(--app-primary-rgb), 0.18);
+    color: var(--app-text);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+body.is-dashboard-editing .dashboard-edit-hint {
+    display: block;
+    animation: app-fade-in var(--app-duration-fast) var(--app-ease-smooth);
+}
+
+.dashboard-edit-hint__mobile {
+    display: none;
+}
+
+/* 窄屏（含平板竖屏）：统计卡两列，活动 / LLM 卡通栏；禁用拖动 / 拉伸 */
 @media (max-width: 991.98px) {
     .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
         height: auto;
     }
 
@@ -2130,8 +2187,18 @@ body.is-dashboard-editing .dashboard-card__resize,
         position: static;
         width: auto;
         height: auto;
-        margin-bottom: 1rem;
+        margin-bottom: 0;
         transition: none;
+    }
+
+    .dashboard-card__body,
+    .dashboard-grid__item > .dashboard-card__body > .card {
+        height: auto;
+    }
+
+    .dashboard-grid__item[data-card-group="activity"],
+    .dashboard-grid__item[data-card-group="llm"] {
+        grid-column: 1 / -1;
     }
 
     .dashboard-card__chrome,
@@ -2142,8 +2209,18 @@ body.is-dashboard-editing .dashboard-card__resize,
 
     .dashboard-grid__item .sync-timeline,
     .dashboard-grid__item .heatmap-container {
+        overflow-x: auto;
         overflow-y: visible;
         max-height: none;
+        height: auto;
+    }
+
+    .dashboard-edit-hint__desktop {
+        display: none;
+    }
+
+    .dashboard-edit-hint__mobile {
+        display: block;
     }
 }
 
@@ -2162,8 +2239,8 @@ body.is-dashboard-editing .dashboard-card__resize,
     border-bottom: 1px solid var(--app-border, #e9ecef);
 }
 
-/* 顶栏「自定义」按钮在编辑态高亮，提示当前可拖动 / 拉伸 */
-.inbox-header-chip.is-active {
+/* 顶栏「自定义」按钮在编辑态高亮：画在胶囊 __track 上，避免外层矩形漏色 */
+.inbox-header-chip.is-active .inbox-header-chip__track {
     border-color: rgba(var(--app-primary-rgb), 0.55);
     background: rgba(var(--app-primary-rgb), 0.12);
     color: var(--app-primary);

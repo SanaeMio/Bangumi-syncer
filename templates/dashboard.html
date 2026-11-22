@@ -120,6 +120,12 @@
 {% block content %}
     <!-- 仪表盘卡片区：卡片清单、默认尺寸与摆放见 app/core/dashboard_registry.py；
          显示/尺寸/位置偏好由 static/js/dashboard-cards.js 记在 localStorage（不落服务端） -->
+    <div class="dashboard-edit-hint" role="status">
+        <p class="dashboard-edit-hint__desktop mb-0">
+            拖动换位：指针落在哪张卡上，其它卡片就让开；拉右下角只改这一张的大小，松手后被挡住的卡片才会下移。点「管理卡片」显示或隐藏；Esc 或「完成」退出。
+        </p>
+        <p class="dashboard-edit-hint__mobile mb-0">窄屏只能通过「管理卡片」显示或隐藏卡片，排版请在电脑上拖动调整。</p>
+    </div>
     <div class="dashboard-grid"
          id="dashboardGrid"
          data-llm-available="{{ '1' if dashboard_llm_available else '0' }}"

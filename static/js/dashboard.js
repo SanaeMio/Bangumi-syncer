@@ -1103,6 +1103,7 @@
     if (!data) {
       container.innerHTML =
         '<div class="text-center text-muted py-3">无数据</div>'
+      notifyContentChanged()
       return
     }
 
@@ -1168,12 +1169,13 @@
       if (animate) {
         container.classList.add('heatmap-animate')
         for (var i = 0; i < cellEls.length; i++) {
-          cellEls[i].style.animationDelay = Math.floor(i / 7) * 5 + 'ms'
+          cellEls[i].style.animationDelay = Math.floor(i / 7) * 12 + 'ms'
         }
       } else {
         container.classList.remove('heatmap-animate')
       }
       updateHeatmapLegend()
+      notifyContentChanged()
     })
   }
 
@@ -1252,6 +1254,12 @@
     return { primary, rgb }
   }
 
+  function chartAnimationDuration() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 0
+      : 280
+  }
+
   // 本地日期字符串 YYYY-MM-DD。不能直接用 toISOString()：
   // 它返回 UTC 日期，与图表标签的 toLocaleDateString()（本地）不一致，
   // 非 UTC 时区会整体错一天。
@@ -1320,7 +1328,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 200 },
+          animation: { duration: chartAnimationDuration() },
           plugins: { legend: { display: false } },
           scales: {
             y: {
@@ -1373,7 +1381,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 200 },
+          animation: { duration: chartAnimationDuration() },
           plugins: {
             legend: {
               display: true,
@@ -1473,7 +1481,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 200 },
+        animation: { duration: chartAnimationDuration() },
         plugins: { legend: { display: false } },
         scales: {
           y: {

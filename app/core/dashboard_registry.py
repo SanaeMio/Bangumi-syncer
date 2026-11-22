@@ -12,9 +12,9 @@
 3. 需要额外前端行为时监听 ``document`` 上的 ``dashboard:cards-ready`` 事件
    （detail 为当前布局），不要直接改 ``dashboard-cards.js``。
 
-布局单位：横向以 12 栏栅格计（``GRID_COLUMNS``），纵向以像素计（卡片高度即像素，
-前端拖动时按 ``HEIGHT_STEP`` 吸附）。默认布局由 :func:`dashboard_layout` 按登记顺序
-做「首次适配」摆放，效果与旧版两列仪表盘一致。
+布局单位：横向以 12 栏栅格计（``GRID_COLUMNS``），纵向以像素计
+（拉伸按 ``HEIGHT_STEP`` 吸附）。默认布局由 :func:`dashboard_layout` 按登记顺序
+做「首次适配」摆放。
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ GRID_COLUMNS = 12
 GRID_GAP = 24
 #: 卡片最小高度（px）。
 MIN_CARD_HEIGHT = 96
-#: 卡片默认高度（px）：沿用旧版统计卡片的视觉高度。
-DEFAULT_CARD_HEIGHT = 106
-#: 前端拖动拉伸时的高度吸附步长（px）。
+#: 卡片默认高度（px）：统计卡单行完整显示（图标 3.25rem + ``.card-body.p-4``）。
+DEFAULT_CARD_HEIGHT = 128
+#: 前端拉伸时的高度吸附步长（px）；与 ``GRID_GAP`` 成倍数，左右列容易齐底。
 HEIGHT_STEP = 8
 
 #: 卡片分组：统计 / LLM 用量 / 活动可视化。仅用于默认可见性与样式归类。
@@ -240,6 +240,7 @@ def _register_builtin_cards() -> None:
             template="dashboard/cards/llm_trend.html",
             width=12,
             height=300,
+            min_height=200,
             group="llm",
             default_visible=False,
         )
@@ -252,8 +253,8 @@ def _register_builtin_cards() -> None:
             description="最近的同步记录，新的从顶部出现。",
             template="dashboard/cards/sync_timeline.html",
             group="activity",
-            width=5,
-            height=780,
+            width=6,
+            height=688,
             min_width=3,
             min_height=280,
             fit_height=True,
@@ -266,11 +267,10 @@ def _register_builtin_cards() -> None:
             description="按天展示最近一年的同步活跃度。",
             template="dashboard/cards/sync_heatmap.html",
             group="activity",
-            width=7,
+            width=6,
             height=200,
-            min_width=4,
+            min_width=3,
             min_height=140,
-            fit_height=True,
         )
     )
     register_card(
@@ -280,10 +280,10 @@ def _register_builtin_cards() -> None:
             description="最近 7 天的同步数量走势。",
             template="dashboard/cards/sync_daily_trend.html",
             group="activity",
-            width=7,
-            height=556,
-            min_width=4,
-            min_height=300,
+            width=6,
+            height=464,
+            min_width=3,
+            min_height=280,
         )
     )
     register_card(
@@ -293,9 +293,9 @@ def _register_builtin_cards() -> None:
             description="未来 30 天在追番剧的放送日程（需启用 Archive 离线库）。",
             template="dashboard/cards/airing_calendar.html",
             group="activity",
-            width=7,
+            width=6,
             height=360,
-            min_width=4,
+            min_width=3,
             default_visible=False,
         )
     )
@@ -306,7 +306,7 @@ def _register_builtin_cards() -> None:
             description="各调度器任务的下次运行时间。",
             template="dashboard/cards/scheduler_status.html",
             group="activity",
-            width=5,
+            width=6,
             height=360,
             min_width=3,
             default_visible=False,

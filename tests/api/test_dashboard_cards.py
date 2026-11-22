@@ -13,6 +13,7 @@ from app.api import pages
 from app.core import dashboard_registry as registry
 from app.core.dashboard_registry import (
     GRID_COLUMNS,
+    GRID_GAP,
     DashboardCard,
     dashboard_layout,
     layout_height,
@@ -96,16 +97,29 @@ class TestDashboardRegistry:
     def test_content_driven_cards_mark_fit_height(self):
         """列表 / 热力图按内容长高，图表与统计卡保持固定高度。"""
         by_id = {card.id: card for card in CARDS}
-        for card_id in ("sync-timeline", "sync-heatmap"):
-            assert by_id[card_id].fit_height is True, card_id
-        for card_id in ("stats-totals", "sync-daily-trend", "llm-trend"):
+        assert by_id["sync-timeline"].fit_height is True
+        for card_id in (
+            "stats-totals",
+            "sync-heatmap",
+            "sync-daily-trend",
+            "llm-trend",
+        ):
             assert by_id[card_id].fit_height is False, card_id
 
     def test_activity_default_heights_show_full_content(self):
-        """默认高度以「6 条记录 / 完整热力图」为准，右列与左列齐底。"""
+        """默认高度贴合内容，右列热力图+趋势与左列齐底。"""
         by_id = {card.id: card for card in CARDS}
-        assert by_id["sync-timeline"].height >= 780
-        assert by_id["sync-heatmap"].height >= 200
+        assert registry.DEFAULT_CARD_HEIGHT == 128
+        for card in CARDS:
+            if card.group == "stats":
+                assert card.height == registry.DEFAULT_CARD_HEIGHT
+        assert by_id["sync-timeline"].height == 688
+        assert by_id["sync-heatmap"].height == 200
+        assert by_id["sync-daily-trend"].height == 464
+        assert (
+            by_id["sync-heatmap"].height + GRID_GAP + by_id["sync-daily-trend"].height
+            == by_id["sync-timeline"].height
+        )
 
         layout = {item.card.id: item for item in dashboard_layout()}
         timeline = layout["sync-timeline"]
@@ -216,15 +230,15 @@ class TestDashboardLayout:
             assert item.x + item.w <= GRID_COLUMNS
 
     def test_activity_cards_keep_old_two_column_shape(self):
-        """「最近同步」占左 5 列，「热力图 + 趋势」叠在右 7 列，与旧版一致。"""
+        """「最近同步」占左 6 列，「热力图 + 趋势」叠在右 6 列。"""
         by_id = {item.card.id: item for item in dashboard_layout()}
         timeline = by_id["sync-timeline"]
         heatmap = by_id["sync-heatmap"]
         trend = by_id["sync-daily-trend"]
 
-        assert (timeline.x, timeline.w) == (0, 5)
-        assert (heatmap.x, heatmap.w) == (5, 7)
-        assert trend.x == 5 and trend.w == 7
+        assert (timeline.x, timeline.w) == (0, 6)
+        assert (heatmap.x, heatmap.w) == (6, 6)
+        assert trend.x == 6 and trend.w == 6
         assert timeline.y == heatmap.y
         assert trend.y == heatmap.y + heatmap.h + registry.GRID_GAP
         assert timeline.h == heatmap.h + trend.h + registry.GRID_GAP
@@ -252,6 +266,9 @@ class TestDashboardPageRendersCards:
         assert 'class="dashboard-grid"' in body
         assert "dashboard-cards.js" in body
         assert 'id="dashboardCustomizeBtn"' in body
+        assert "dashboard-edit-hint" in body
+        assert "dashboard-edit-hint__desktop" in body
+        assert "dashboard-edit-hint__mobile" in body
 
         for card in CARDS:
             assert f'data-dashboard-card="{card.id}"' in body, card.id

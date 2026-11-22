@@ -8,7 +8,8 @@
  *   3. 自定义弹窗里只控制「显示哪些卡片」，顺序与大小在首页拖出来。
  *
  * 布局单位：横向按 12 栏栅格（列），纵向按像素（高度吸附到 HEIGHT_STEP）。
- * 每次改动后按「重力」向上压缩，避免出现悬空的空隙。
+ * 拖动换位：主屏幕插入（指针落在哪张卡上就插入到哪，行满换行）。
+ * 拉伸：只改当前这张，松手后再把被挡住的卡往下推。
  */
 (function () {
     'use strict'
@@ -17,10 +18,20 @@
     var STORAGE_VERSION = 2
     var FALLBACK_COLUMNS = 12
     var FALLBACK_GAP = 24
-    var FALLBACK_HEIGHT = 106
+    var FALLBACK_HEIGHT = 128
+    var LEGACY_DEFAULT_HEIGHT = 106
     var FALLBACK_MIN_HEIGHT = 96
     var HEIGHT_STEP = 8
     var MAX_HEIGHT = 1600
+    var LEGACY_HEIGHT = {
+        'sync-timeline': [780, 736],
+        'sync-heatmap': [280],
+        'sync-daily-trend': [556, 432],
+        'airing-calendar': [432],
+        'scheduler-status': [432],
+        'llm-trend': [432]
+    }
+    // 与 CSS max-width: 991.98px 对齐：整数视口宽 ≤991 流式栅格，禁止拖 / 拉
     var MOBILE_MAX_WIDTH = 991
     var DRAG_THRESHOLD = 3
 
@@ -101,6 +112,15 @@
             FALLBACK_MIN_HEIGHT,
             MAX_HEIGHT
         )
+    }
+
+    function pointerOnGrid(event) {
+        var rect = getGrid().getBoundingClientRect()
+        var stride = metrics().stride
+        return {
+            col: (event.clientX - rect.left) / stride,
+            y: event.clientY - rect.top
+        }
     }
 
     function minWidthOf(el) {
@@ -213,11 +233,19 @@
             if (!item) {
                 item = defaults.layout[id] || geometryOf(el)
             }
+            var registeredH = numberAttr(el, 'data-card-height', FALLBACK_HEIGHT)
+            var h = clamp(item.h, FALLBACK_MIN_HEIGHT, MAX_HEIGHT)
+            var legacyH = LEGACY_HEIGHT[id]
+            // 仍是旧默认、且登记高度已改时跟着改；用户手动拉过的不改
+            if (h === LEGACY_DEFAULT_HEIGHT && registeredH === FALLBACK_HEIGHT) {
+                h = FALLBACK_HEIGHT
+            }
+            if (legacyH && legacyH.indexOf(h) !== -1) h = registeredH
             result.layout[id] = {
                 x: clamp(item.x, 0, FALLBACK_COLUMNS - 1),
                 y: Math.max(0, item.y),
                 w: clamp(item.w, 1, FALLBACK_COLUMNS),
-                h: clamp(item.h, FALLBACK_MIN_HEIGHT, MAX_HEIGHT)
+                h: h
             }
         })
 
@@ -297,6 +325,243 @@
         return { x: 0, y: maxBottom() }
     }
 
+    function cloneLayout(layout) {
+        var out = {}
+        Object.keys(layout).forEach(function (id) {
+            var item = layout[id]
+            out[id] = { x: item.x, y: item.y, w: item.w, h: item.h }
+        })
+        return out
+    }
+
+    function assignLayout(next) {
+        Object.keys(state.layout).forEach(function (id) {
+            var item = next[id]
+            if (!item) return
+            state.layout[id].x = item.x
+            state.layout[id].y = item.y
+            state.layout[id].w = item.w
+            state.layout[id].h = item.h
+        })
+    }
+
+    function visibleLayoutIds() {
+        return Object.keys(state.layout).filter(function (id) {
+            return state.hidden.indexOf(id) === -1
+        })
+    }
+
+    /** 同一列、上下紧贴的卡片成一组（热力图+趋势），左右换位时一起走 */
+    function columnCluster(id, layout, gap) {
+        var item = layout[id]
+        if (!item) return [id]
+        var col = visibleLayoutIds().filter(function (otherId) {
+            var other = layout[otherId]
+            return other && other.x === item.x && other.w === item.w
+        })
+        col.sort(function (a, b) {
+            return layout[a].y - layout[b].y
+        })
+        var index = col.indexOf(id)
+        if (index < 0) return [id]
+        var start = index
+        var end = index
+        while (start > 0) {
+            var above = layout[col[start - 1]]
+            var current = layout[col[start]]
+            if (above.y + above.h + gap === current.y) start -= 1
+            else break
+        }
+        while (end < col.length - 1) {
+            var currentEnd = layout[col[end]]
+            var below = layout[col[end + 1]]
+            if (currentEnd.y + currentEnd.h + gap === below.y) end += 1
+            else break
+        }
+        return col.slice(start, end + 1)
+    }
+
+    function clusterHeight(members, layout, gap) {
+        var height = 0
+        members.forEach(function (id, index) {
+            height += layout[id].h
+            if (index < members.length - 1) height += gap
+        })
+        return height
+    }
+
+    function restackCluster(members, y, gap) {
+        var nextY = y
+        members.forEach(function (id) {
+            state.layout[id].y = nextY
+            nextY += state.layout[id].h + gap
+        })
+    }
+
+    function allClusters(layout, gap) {
+        var seen = {}
+        var clusters = []
+        visibleLayoutIds().forEach(function (id) {
+            if (seen[id]) return
+            var members = columnCluster(id, layout, gap)
+            members.forEach(function (member) {
+                seen[member] = true
+            })
+            clusters.push({
+                ids: members,
+                x: layout[members[0]].x,
+                w: layout[members[0]].w,
+                y: layout[members[0]].y,
+                h: clusterHeight(members, layout, gap)
+            })
+        })
+        return clusters
+    }
+
+    function readingOrder(clusters) {
+        return clusters.slice().sort(function (a, b) {
+            return a.y - b.y || a.x - b.x
+        })
+    }
+
+    /** 从左到右、行满换行，类似主屏幕图标流式排布 */
+    function packClusters(order, gap, columns) {
+        var x = 0
+        var y = 0
+        var rowH = 0
+        var slots = []
+        order.forEach(function (cluster) {
+            var width = cluster.w
+            var height = cluster.h
+            if (x > 0 && x + width > columns) {
+                y += rowH + gap
+                x = 0
+                rowH = 0
+            }
+            restackCluster(cluster.ids, y, gap)
+            cluster.ids.forEach(function (id) {
+                state.layout[id].x = x
+            })
+            slots.push({ cluster: cluster, x: x, y: y, w: width, h: height })
+            x += width
+            rowH = Math.max(rowH, height)
+        })
+        return slots
+    }
+
+    function measurePack(order, gap, columns) {
+        var x = 0
+        var y = 0
+        var rowH = 0
+        var slots = []
+        order.forEach(function (cluster) {
+            var width = cluster.w
+            var height = cluster.h
+            if (x > 0 && x + width > columns) {
+                y += rowH + gap
+                x = 0
+                rowH = 0
+            }
+            slots.push({ cluster: cluster, x: x, y: y, w: width, h: height })
+            x += width
+            rowH = Math.max(rowH, height)
+        })
+        return slots
+    }
+
+    function slotDistance(slot, pointerCol, pointerY, stride) {
+        var cx = (slot.x + slot.w / 2) * stride
+        var cy = slot.y + slot.h / 2
+        var dx = pointerCol * stride - cx
+        var dy = pointerY - cy
+        return dx * dx + dy * dy
+    }
+
+    function slotContains(slot, pointerCol, pointerY) {
+        return (
+            pointerCol >= slot.x &&
+            pointerCol < slot.x + slot.w &&
+            pointerY >= slot.y &&
+            pointerY < slot.y + slot.h
+        )
+    }
+
+    function orderIndexOf(order, cluster) {
+        var index = -1
+        order.forEach(function (item, i) {
+            if (item === cluster) index = i
+        })
+        return index
+    }
+
+    /** 主屏幕式插入：指针还在当前空位里就钉住；否则优先落点所在空位 */
+    function insertIndexFromPointer(others, dragged, pointerCol, pointerY, gap, columns) {
+        var stride = metrics().stride
+        var current = dragState.insertIndex
+        if (current != null && current >= 0 && current <= others.length) {
+            var currentTrial = others.slice()
+            currentTrial.splice(current, 0, dragged)
+            var currentSlot = measurePack(currentTrial, gap, columns)[current]
+            if (currentSlot && slotContains(currentSlot, pointerCol, pointerY)) {
+                return current
+            }
+        }
+
+        var hit = null
+        var hitDist = Infinity
+        var best = current == null ? 0 : current
+        var bestDist = Infinity
+        var limit = others.length
+        for (var i = 0; i <= limit; i += 1) {
+            var trial = others.slice()
+            trial.splice(i, 0, dragged)
+            var slot = measurePack(trial, gap, columns)[i]
+            var dist = slotDistance(slot, pointerCol, pointerY, stride)
+            if (slotContains(slot, pointerCol, pointerY) && dist < hitDist) {
+                hit = i
+                hitDist = dist
+            }
+            if (dist < bestDist) {
+                bestDist = dist
+                best = i
+            }
+        }
+        return hit != null ? hit : best
+    }
+
+    function layoutDragMove(target, gap) {
+        var columns = metrics().columns
+        var clusters = allClusters(state.layout, gap)
+        var dragged = null
+        clusters.forEach(function (cluster) {
+            if (cluster.ids.indexOf(dragState.id) !== -1) dragged = cluster
+        })
+        if (!dragged) return
+
+        var ordered = readingOrder(clusters)
+        var others = ordered.filter(function (cluster) {
+            return cluster !== dragged
+        })
+        if (dragState.insertIndex == null) {
+            dragState.insertIndex = orderIndexOf(ordered, dragged)
+        }
+
+        var pointer = dragState.pointer
+        var pointerCol = pointer ? pointer.col : target.x + dragged.w / 2
+        var pointerY = pointer ? pointer.y : target.y + dragged.h / 2
+        var insertAt = insertIndexFromPointer(
+            others,
+            dragged,
+            pointerCol,
+            pointerY,
+            gap,
+            columns
+        )
+        dragState.insertIndex = insertAt
+        others.splice(insertAt, 0, dragged)
+        packClusters(others, gap, columns)
+    }
+
     function compact(gap) {
         var ids = Object.keys(state.layout).filter(function (id) {
             return state.hidden.indexOf(id) === -1
@@ -319,6 +584,40 @@
             item.y = y
             placed.push(item)
         })
+    }
+
+    /** 默认两列时把较短的一列拉到与对侧齐底（只拉高不压缩） */
+    function alignActivityColumns(gap) {
+        var timeline = state.layout['sync-timeline']
+        var heatmap = state.layout['sync-heatmap']
+        var trend = state.layout['sync-daily-trend']
+        if (!timeline || !heatmap || !trend) return false
+        if (
+            state.hidden.indexOf('sync-timeline') !== -1 ||
+            state.hidden.indexOf('sync-heatmap') !== -1 ||
+            state.hidden.indexOf('sync-daily-trend') !== -1
+        ) {
+            return false
+        }
+        if (Math.abs(timeline.y - heatmap.y) > 0.5) return false
+        if (timeline.x < heatmap.x + heatmap.w && heatmap.x < timeline.x + timeline.w) {
+            return false
+        }
+        if (trend.x !== heatmap.x || trend.w !== heatmap.w) return false
+        if (Math.abs(trend.y - (heatmap.y + heatmap.h + gap)) > 0.5) return false
+        var leftBottom = timeline.y + timeline.h
+        var rightBottom = trend.y + trend.h
+        if (Math.abs(leftBottom - rightBottom) < 0.5) return false
+        if (leftBottom > rightBottom) {
+            var trendH = snapHeight(leftBottom - trend.y)
+            if (trendH < 280 || trendH === trend.h) return false
+            trend.h = Math.min(trendH, MAX_HEIGHT)
+            return true
+        }
+        var timelineH = snapHeight(rightBottom - timeline.y)
+        if (timelineH < 280 || timelineH === timeline.h) return false
+        timeline.h = Math.min(timelineH, MAX_HEIGHT)
+        return true
     }
 
     function maxBottom() {
@@ -365,9 +664,9 @@
             }
         })
 
-        if (!changed) return
-        compact(gap)
-        apply()
+        if (changed) compact(gap)
+        if (alignActivityColumns(gap)) changed = true
+        if (changed) apply()
     }
 
     function scheduleFit() {
@@ -468,14 +767,17 @@
             startY: event.clientY,
             origin: { x: item.x, y: item.y, w: item.w, h: item.h },
             target: { x: item.x, y: item.y, w: item.w, h: item.h },
+            baseLayout: cloneLayout(state.layout),
             minWidth: minWidthOf(el),
             minHeight: minHeightOf(el),
+            insertIndex: null,
+            pointer: null,
             moved: false
         }
 
         el.classList.add(mode === 'move' ? 'is-dragging' : 'is-resizing')
         getGrid().classList.add('is-interacting')
-        movePlaceholder(dragState.target)
+        if (mode === 'move') movePlaceholder(dragState.target)
 
         document.addEventListener('pointermove', onPointerMove)
         document.addEventListener('pointerup', onPointerUp)
@@ -496,17 +798,11 @@
         var m = metrics()
         var origin = dragState.origin
         var target = dragState.target
+        dragState.pointer = pointerOnGrid(event)
 
         if (dragState.mode === 'move') {
-            target.x = clamp(
-                Math.round((origin.x * m.stride + dx) / m.stride),
-                0,
-                m.columns - origin.w
-            )
-            target.y = Math.max(
-                0,
-                Math.round((origin.y + dy) / HEIGHT_STEP) * HEIGHT_STEP
-            )
+            target.x = origin.x + dx / m.stride
+            target.y = Math.max(0, origin.y + dy)
             dragState.el.style.transform =
                 'translate3d(' + dx + 'px,' + dy + 'px,0)'
         } else {
@@ -520,15 +816,45 @@
                 dragState.minHeight,
                 MAX_HEIGHT
             )
-            writeGeometry(dragState.el, {
-                x: origin.x,
-                y: origin.y,
-                w: target.w,
-                h: target.h
-            })
         }
 
-        movePlaceholder(target)
+        previewDrag()
+    }
+
+    function previewDrag() {
+        if (!dragState) return
+        var gap = metrics().gap
+        assignLayout(dragState.baseLayout)
+        var item = state.layout[dragState.id]
+        if (dragState.mode === 'move') {
+            layoutDragMove(dragState.target, gap)
+            item = state.layout[dragState.id]
+        } else {
+            item.w = dragState.target.w
+            item.h = dragState.target.h
+        }
+
+        getItems().forEach(function (el) {
+            var id = cardId(el)
+            var next = state.layout[id]
+            if (!next) return
+            if (id === dragState.id && dragState.mode === 'move') return
+            writeGeometry(el, next)
+        })
+        if (dragState.mode === 'move') {
+            var members = columnCluster(dragState.id, state.layout, gap)
+            var head = state.layout[members[0]]
+            movePlaceholder({
+                x: head.x,
+                y: head.y,
+                w: head.w,
+                h: clusterHeight(members, state.layout, gap)
+            })
+        }
+        var target = getGrid()
+        if (target && !isMobile()) {
+            target.style.setProperty('--dg-height', maxBottom() + 'px')
+        }
     }
 
     function onPointerUp() {
@@ -546,19 +872,15 @@
         removePlaceholder()
 
         if (!current.moved) {
+            assignLayout(current.baseLayout)
             apply()
             return
         }
 
-        var gap = metrics().gap
-        var item = state.layout[current.id]
-        item.x = current.target.x
-        item.y = current.target.y
-        item.w = current.target.w
-        item.h = current.target.h
+        if (current.mode === 'resize') {
+            pushDown(current.id, metrics().gap)
+        }
 
-        pushDown(current.id, gap)
-        compact(gap)
         persist()
     }
 
@@ -822,7 +1144,9 @@
 
         var stored = readState()
         state = normalize(stored || cloneDefaults())
-        compact(metrics().gap)
+        var gap = metrics().gap
+        compact(gap)
+        alignActivityColumns(gap)
         apply()
 
         var btn = customizeButton()

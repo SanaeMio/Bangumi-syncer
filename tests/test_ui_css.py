@@ -349,8 +349,14 @@ class TestDashboardRealtime:
         for selector in (
             ".stats-value--updated",
             ".tl-item--new::after",
+            ".dashboard-edit-hint",
         ):
             assert selector in block
+
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "function chartAnimationDuration()" in js
+        assert "animation: { duration: chartAnimationDuration() }" in js
+        assert "animation: { duration: 200 }" not in js
 
 
 class TestDashboardEditMode:
@@ -391,6 +397,56 @@ class TestDashboardEditMode:
         assert "manage.addEventListener('click', openModal)" in js
         assert "event.key !== 'Escape'" in js
 
+    def test_active_chip_paints_track_not_outer_button(self):
+        """编辑态高亮画在胶囊 __track 上，外层 button 保持透明。"""
+        css = _css("dashboard.css")
+        assert ".inbox-header-chip.is-active .inbox-header-chip__track" in css
+        active_outer = _block(css, ".inbox-header-chip")
+        assert "background: transparent" in active_outer
+        track = _block(css, ".inbox-header-chip.is-active .inbox-header-chip__track")
+        assert "background: rgba(var(--app-primary-rgb), 0.12)" in track
+        assert "border-color: rgba(var(--app-primary-rgb), 0.55)" in track
+
+    def test_edit_hint_bar_is_in_template_and_shown_while_editing(self):
+        html = (_REPO_ROOT / "templates/dashboard.html").read_text(encoding="utf-8")
+        assert 'class="dashboard-edit-hint"' in html
+        assert "dashboard-edit-hint__desktop" in html
+        assert "dashboard-edit-hint__mobile" in html
+        assert "拖动换位" in html
+        assert "只改这一张的大小" in html
+        css = _css("dashboard.css")
+        assert "display: none" in _block(css, ".dashboard-edit-hint")
+        shown = _block(css, "body.is-dashboard-editing .dashboard-edit-hint")
+        assert "display: block" in shown
+        assert "animation: app-fade-in" in shown
+        reduced = _last_media_block(css, "(prefers-reduced-motion: reduce)")
+        assert ".dashboard-edit-hint" in reduced
+
+    def test_mobile_toolbar_reserves_manage_chip_slot(self):
+        css = _css("dashboard.css")
+        assert "chipManage" in css
+        assert "#dashboardManageCardsBtn" in css
+        assert "grid-area: chipManage" in css
+        assert (
+            "body.is-dashboard-editing main.app-main>.d-flex:has(.header-theme-switcher)"
+            in css
+        )
+
+    def test_mobile_grid_is_two_column_stats(self):
+        css = _css("dashboard.css")
+        tablet = _last_media_block(css, "(max-width: 991.98px)")
+        assert "grid-template-columns: 1fr 1fr" in tablet
+        assert '[data-card-group="activity"]' in tablet
+        assert '[data-card-group="llm"]' in tablet
+        assert "dashboard-card__chrome" in tablet
+        assert "display: none" in tablet
+        assert "dashboard-edit-hint__mobile" in tablet
+
+    def test_mobile_breakpoint_matches_css(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        assert "var MOBILE_MAX_WIDTH = 991" in js
+        assert "window.innerWidth <= MOBILE_MAX_WIDTH" in js
+
 
 class TestDashboardContentFit:
     """内容高度随数据变化的卡片按内容长高，避免默认高度截断内容。"""
@@ -404,12 +460,96 @@ class TestDashboardContentFit:
             "document.addEventListener('dashboard:content-changed', scheduleFit)" in js
         )
 
+    def test_activity_columns_align_even_when_fit_did_not_grow(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        fit_fn = js[
+            js.index("function fitHeights()") : js.index("function scheduleFit(")
+        ]
+        assert "if (changed) compact(gap)" in fit_fn
+        assert "if (alignActivityColumns(gap)) changed = true" in fit_fn
+        assert "if (!changed) return" not in fit_fn
+        init_fn = js[js.index("function init()") :]
+        assert "alignActivityColumns(gap)" in init_fn
+        assert "leftBottom > rightBottom" in js
+
+    def test_grid_cards_fill_cell_height(self):
+        css = _css("dashboard.css")
+        card = _block(css, ".dashboard-grid__item > .dashboard-card__body > .card")
+        assert "height: 100%" in card
+        body = _block(css, ".dashboard-card__body")
+        assert "height: 100%" in body
+
     def test_dashboard_notifies_content_changes(self):
         js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
         assert "function notifyContentChanged()" in js
         assert "new CustomEvent('dashboard:content-changed')" in js
-        # 首屏数据落地与实时推送后各通知一次
-        assert js.count("notifyContentChanged()") == 3
+        # 函数定义 + 首屏落地 + 实时推送 + 热力图空数据 + 热力图 DOM 写入
+        assert js.count("notifyContentChanged()") == 5
+        render_fn = js[
+            js.index("function renderHeatmap") : js.index(
+                "function updateHeatmapLegend"
+            )
+        ]
+        assert render_fn.count("notifyContentChanged()") == 2
+
+    def test_heatmap_overflow_does_not_clip_last_column(self):
+        css = _css("dashboard.css")
+        container = _block(css, ".heatmap-container")
+        assert "overflow-x: auto" in container
+        assert "overflow: hidden" not in container
+
+    def test_legacy_stats_height_migrates_without_storage_bump(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        assert "var STORAGE_VERSION = 2" in js
+        assert "var FALLBACK_HEIGHT = 128" in js
+        assert "var LEGACY_DEFAULT_HEIGHT = 106" in js
+        assert "h === LEGACY_DEFAULT_HEIGHT" in js
+        assert "registeredH === FALLBACK_HEIGHT" in js
+        assert "var HEIGHT_STEP = 8" in js
+        assert "'sync-timeline': [780, 736]" in js
+        assert "'sync-daily-trend': [556, 432]" in js
+        assert "'sync-heatmap': [280]" in js
+
+    def test_drag_reflows_others_without_compacting_pinned_card(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        assert "function previewDrag()" in js
+        assert "function alignActivityColumns(gap)" in js
+        assert "function columnCluster(id, layout, gap)" in js
+        assert "function layoutDragMove(target, gap)" in js
+        assert "function packClusters(order, gap, columns)" in js
+        assert "function insertIndexFromPointer(" in js
+        assert "x > 0 && x + width > columns" in js
+        assert "layoutDragMove(dragState.target, gap)" in js
+        css = _css("dashboard.css")
+        assert ".dashboard-grid.is-interacting .dashboard-grid__item {" not in css
+        assert ".dashboard-grid__item.is-resizing {" in css
+
+    def test_resize_does_not_move_others_until_drop(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        preview = js[
+            js.index("function previewDrag()") : js.index("function onPointerUp(")
+        ]
+        assert "reflowAround" not in preview
+        assert "pushDown(" not in preview
+        assert "layoutDragMove(dragState.target, gap)" in preview
+        drop = js[
+            js.index("function onPointerUp()") : js.index("function onPointerDown(")
+        ]
+        assert "current.mode === 'resize'" in drop
+        assert "pushDown(current.id, metrics().gap)" in drop
+        css = _css("dashboard.css")
+        assert ".dashboard-grid:has(.is-resizing) .dashboard-grid__item" in css
+
+    def test_resize_snaps_to_column_and_height_step(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        move = js[
+            js.index("function onPointerMove(") : js.index("function previewDrag(")
+        ]
+        assert "Math.round((origin.w * m.stride + dx) / m.stride)" in move
+        assert "Math.round((origin.h + dy) / HEIGHT_STEP) * HEIGHT_STEP" in move
+        assert "function pointerOnGrid(event)" in js
+        assert "function slotContains(" in js
+        assert "slotContains(currentSlot, pointerCol, pointerY)" in js
 
 
 class TestRecordDetailCopy:
