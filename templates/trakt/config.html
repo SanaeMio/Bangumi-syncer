@@ -501,5 +501,6 @@
 {% endblock %}
 {% block scripts %}
     {{ super() }}
+    <script src="{{ '/static/js/table-utils.js' | static_v }}"></script>
     <script src="{{ '/static/js/trakt/config.js' | static_v }}"></script>
 {% endblock %}

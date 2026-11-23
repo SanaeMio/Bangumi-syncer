@@ -62,18 +62,15 @@ def test_static_css_loaded(page, base_url: str):
 
 
 def test_static_js_loaded(page, base_url: str):
-    """静态 JS 资源正常加载（app.js 拆分后的 7 个模块均 200）"""
+    """登录页仅加载自身需要的公共 JS 模块。"""
     page.goto(f"{base_url}/login")
     page.wait_for_load_state("networkidle")
 
-    # app.js 已按功能拆分为 7 个独立文件，逐一校验加载
     expected = [
         "api-utils.js",
         "toast-ui.js",
         "ui-utils.js",
-        "records-detail.js",
         "auth.js",
-        "sync-retry.js",
         "theme.js",
     ]
     loaded = page.evaluate(

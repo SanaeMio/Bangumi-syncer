@@ -7,7 +7,7 @@ class ThemeManager {
         this.THEME_KEY = 'app-theme';
         this.COLOR_KEY = 'app-color';
         this.COLORS = {
-            sakura:    '#f09199',
+            sakura:    '#f3a2a8',
             amber:     '#f78c50',
             sakuragi:  '#e9485e',
             sanae:     '#8cb48c',
@@ -115,7 +115,7 @@ class ThemeManager {
                     { duration: 700, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards', pseudoElement: '::view-transition-new(root)' }
                 );
                 target.finished.then(function() {
-                    document.documentElement.getAnimations({ subtree: true }).forEach(function(a) { a.cancel(); });
+                    target.cancel();
                 });
             });
             return;
@@ -170,11 +170,12 @@ class ThemeManager {
             var radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
             var transition = document.startViewTransition(function() { self.setColor(color); });
             transition.ready.then(function() {
-                document.documentElement.animate(
+                var target = document.documentElement.animate(
                     { clipPath: ['circle(0px at ' + x + 'px ' + y + 'px)', 'circle(' + radius + 'px at ' + x + 'px ' + y + 'px)'] },
                     { duration: 700, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards', pseudoElement: '::view-transition-new(root)' }
-                ).finished.then(function() {
-                    document.documentElement.getAnimations({ subtree: true }).forEach(function(a) { a.cancel(); });
+                );
+                target.finished.then(function() {
+                    target.cancel();
                 });
             });
             return;

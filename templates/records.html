@@ -108,6 +108,10 @@
     </div>
 {% endblock %}
 {% block scripts %}
+    <script src="{{ '/static/js/table-utils.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/blocked-keywords.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/records-detail.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/sync-retry.js' | static_v }}"></script>
     <script>
 let currentPage = 1;
 let currentLimit = APP_TABLE_PAGE_SIZE;

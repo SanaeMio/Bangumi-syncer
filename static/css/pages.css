@@ -39,6 +39,20 @@
     text-decoration: none;
 }
 
+/* 宽屏下收窄左侧目录栏：原 3/12 在 1400px+ 会空出大片留白，固定 280px 刚好放下最长条目 */
+@media (min-width: 1400px) {
+
+    .config-sidebar-col {
+        flex: 0 0 280px;
+        max-width: 280px;
+    }
+
+    .config-main-col {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
 @media (min-width: 992px) {
 
     [id^="config-section"],
@@ -232,10 +246,10 @@
 }
 
 .pagination .page-item.active .page-link {
-    background: var(--app-gradient-primary);
+    background: var(--app-primary);
     border-color: transparent;
     color: #ffffff;
-    box-shadow: 0 2px 8px rgba(var(--app-primary-rgb), 0.22);
+    box-shadow: none;
 }
 
 .pagination .page-item.disabled .page-link {
@@ -332,7 +346,7 @@
 }
 
 .app-pagination .page-item.active .page-link {
-    background: var(--app-gradient-primary);
+    background: var(--app-primary);
     border-color: transparent;
     color: #fff;
     box-shadow: none;
@@ -340,7 +354,7 @@
 
 .app-pagination .page-item.active .page-link:hover {
     color: #fff;
-    background: var(--app-gradient-primary);
+    background: var(--app-primary);
     border-color: transparent;
 }
 
@@ -1442,94 +1456,688 @@ pre {
 
 /* ========== 登录页面专用样式 ========== */
 
-/* 登录卡片样式 */
-.login-card {
-    max-width: 400px;
+/* 登录页不套用应用壳：去掉桌面端给 body 加的内边距与滚动锁定 */
+body.app-body.login-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 0;
+    overflow-x: hidden;
+}
+
+@media (min-width: 768px) {
+    body.app-body.login-body {
+        height: auto;
+        overflow: visible;
+    }
+}
+
+/* 独立登录壳：背景由 .app-body::before 提供，这里只叠一层主题氛围光 */
+.login-page {
+    /* 登录页专用节奏：比全站默认更从容，避免「啪一下」的廉价感 */
+    --login-motion-ease: cubic-bezier(0.16, 1, 0.32, 1);
+    --login-motion-ease-exit: cubic-bezier(0.22, 1, 0.26, 1);
+    --login-motion-ease-emphasis: cubic-bezier(0.34, 1.12, 0.64, 1);
+    --login-motion-fast: 0.36s;
+    --login-motion-base: 0.48s;
+    --login-motion-slow: 0.62s;
+    --login-motion-enter: 0.76s;
+    --login-motion-exit: 0.68s;
+
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding: max(1.5rem, env(safe-area-inset-top)) 1.25rem
+        max(1.5rem, env(safe-area-inset-bottom));
+    overflow-y: auto;
+}
+
+.login-page__glow {
+    position: fixed;
+    inset: -10%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 42% 38% at 26% 24%, var(--app-ambient-a), transparent 68%),
+        radial-gradient(ellipse 36% 32% at 76% 72%, var(--app-ambient-b), transparent 70%);
+    animation: login-glow-drift 36s ease-in-out infinite alternate;
+    transition: opacity var(--login-motion-exit) var(--login-motion-ease-exit);
+}
+
+.login-page__inner {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 24.5rem;
     margin: 0 auto;
-    animation: app-scale-in-soft 0.48s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    transition: opacity var(--login-motion-exit) var(--login-motion-ease-exit),
+        transform var(--login-motion-exit) var(--login-motion-ease-exit),
+        filter calc(var(--login-motion-exit) * 0.92) var(--login-motion-ease-exit);
 }
 
-/* Logo样式 */
-.login-logo {
-    max-height: 60px;
-    max-width: 100%;
-    width: auto;
-    height: auto;
+/* 登录卡片 */
+.login-card {
+    max-width: 24.5rem;
+    margin: 0 auto;
+    border-radius: var(--app-radius-card);
+    box-shadow: var(--app-shadow-elevated);
+    animation: login-card-in var(--login-motion-enter) var(--login-motion-ease) both;
+}
+
+/* 卡片本身不是可点击目标，悬停时保持同一层阴影 */
+.login-card:hover {
+    box-shadow: var(--app-shadow-elevated);
+}
+
+.login-card__body {
+    padding: 2rem 2rem 1.85rem;
+}
+
+.login-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 1.6rem;
+}
+
+.login-brand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    margin: 0 0 1rem;
+    animation: login-fade-in 0.58s var(--login-motion-ease) 500ms both;
+}
+
+.login-brand__mark {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
     object-fit: contain;
-    display: block;
-    animation: app-fade-in 0.55s ease 0.12s backwards;
 }
 
-/* 登录按钮加载状态 */
-.login-btn-loading .login-text {
+.login-brand__wordmark {
+    display: block;
+    width: auto;
+    height: 20px;
+    max-width: 13.5rem;
+    object-fit: contain;
+}
+
+[data-theme="dark"] .login-brand__mark {
+    filter: brightness(1.75);
+}
+
+[data-theme="dark"] .login-brand__wordmark {
+    filter: brightness(1.4);
+}
+
+.login-title {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--app-text);
+    animation: login-fade-in 0.58s var(--login-motion-ease) 600ms both;
+}
+
+/* 告警：空态高度为 0，出现内容时平滑展开，避免表单整体跳动 */
+.login-alert-slot {
+    display: grid;
+    grid-template-rows: 0fr;
+    padding-bottom: 0;
+    transition: grid-template-rows var(--login-motion-base) var(--login-motion-ease),
+        padding-bottom var(--login-motion-base) var(--login-motion-ease);
+}
+
+.login-alert-slot:not(:empty) {
+    grid-template-rows: 1fr;
+    padding-bottom: 1rem;
+}
+
+.login-alert-slot > * {
+    min-height: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+.login-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--app-radius-card-sm);
+    border: 1px solid transparent;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    animation: login-alert-in var(--login-motion-base) var(--login-motion-ease) backwards;
+}
+
+.login-alert > i {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.login-alert--danger {
+    background: var(--app-red-soft);
+    border-color: rgba(var(--app-red-rgb), 0.28);
+    color: var(--app-text);
+}
+
+.login-alert--danger > i {
+    color: var(--app-red);
+}
+
+/* 表单字段 */
+.login-field {
+    margin-bottom: 1.25rem;
+}
+
+.login-field:nth-of-type(1) {
+    animation: login-fade-in 0.58s var(--login-motion-ease) 700ms both;
+}
+
+.login-field:nth-of-type(2) {
+    animation: login-fade-in 0.58s var(--login-motion-ease) 800ms both;
+}
+
+.login-field .form-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+    padding-left: 0.35rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    transition: color var(--login-motion-fast) var(--login-motion-ease);
+}
+
+.login-field .form-label > i {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.login-field:focus-within .form-label {
+    color: var(--app-primary);
+}
+
+.login-field .form-control {
+    min-height: 2.875rem;
+    padding: 0.6rem 1.125rem;
+    border-radius: var(--app-radius-input);
+    font-size: 0.9rem;
+    transition: border-color var(--login-motion-fast) var(--login-motion-ease),
+        box-shadow var(--login-motion-fast) var(--login-motion-ease),
+        opacity var(--login-motion-fast) var(--login-motion-ease);
+}
+
+.login-field .form-control::placeholder {
+    color: var(--app-text-muted);
+    opacity: 0.65;
+}
+
+.login-field:focus-within .form-control {
+    border-color: rgba(var(--app-primary-rgb), 0.55);
+    box-shadow: var(--app-ring);
+}
+
+/* 提交中禁用输入框：保留内容可读性，只做轻微淡化 */
+.login-field .form-control:disabled {
+    background-color: var(--app-bg-input);
+    color: var(--app-text);
+    opacity: 0.75;
+    cursor: default;
+}
+
+/* 自动填充：清掉 Chrome 的黄底，保留主题输入框观感 */
+.login-card .form-control:-webkit-autofill,
+.login-card .form-control:-webkit-autofill:hover,
+.login-card .form-control:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--app-text);
+    box-shadow: 0 0 0 1000px var(--app-bg-input) inset;
+    caret-color: var(--app-text);
+    transition: background-color 600000s 0s, color 600000s 0s;
+}
+
+.login-card .form-control:-webkit-autofill:focus {
+    box-shadow: 0 0 0 1000px var(--app-bg-input) inset, var(--app-ring);
+}
+
+/* 内联校验：字段整体标记无效，避免 Bootstrap 默认图标挤占胶囊内边距 */
+.login-field.is-invalid .form-control {
+    border-color: rgba(var(--app-red-rgb), 0.6);
+    box-shadow: 0 0 0 3px rgba(var(--app-red-rgb), 0.12);
+    animation: login-field-pulse 0.78s var(--login-motion-ease);
+}
+
+.login-field.is-invalid .form-label,
+.login-field.is-invalid .form-label > i {
+    color: var(--app-red) !important;
+}
+
+.login-field .invalid-feedback {
+    display: block;
+    max-height: 0;
+    margin-top: 0;
+    padding-left: 0.25rem;
+    overflow: hidden;
+    opacity: 0;
+    font-size: 0.75rem;
+    color: var(--app-red);
+    transform: translateY(-4px);
+    transition: max-height var(--login-motion-base) var(--login-motion-ease),
+        margin-top var(--login-motion-base) var(--login-motion-ease),
+        opacity var(--login-motion-fast) var(--login-motion-ease),
+        transform var(--login-motion-fast) var(--login-motion-ease);
+}
+
+.login-field.is-invalid .invalid-feedback {
+    max-height: 2.5rem;
+    margin-top: 0.4rem;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* 密码框与显隐按钮 */
+.login-input-wrap {
+    position: relative;
+}
+
+.login-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: var(--app-radius-pill);
+    background: none !important;
+    color: var(--app-text-muted);
+    transform: translateY(-50%);
+    transition: color var(--login-motion-fast) var(--login-motion-ease),
+        background-color var(--login-motion-fast) var(--login-motion-ease);
+}
+
+.login-password-toggle:hover {
+    background: var(--app-bg-hover) !important;
+    color: var(--app-primary);
+}
+
+.login-password-toggle:focus-visible {
+    box-shadow: var(--app-ring);
+    outline: none;
+}
+
+.login-password-toggle:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.login-password-toggle__icon {
+    position: absolute;
+    font-size: 0.95rem;
+    transition: opacity var(--login-motion-base) var(--login-motion-ease),
+        transform var(--login-motion-base) var(--login-motion-ease);
+}
+
+.login-password-toggle__icon--hide {
+    opacity: 0;
+    transform: scale(0.86);
+}
+
+.login-password-toggle.is-revealed .login-password-toggle__icon--show {
+    opacity: 0;
+    transform: scale(0.86);
+}
+
+.login-password-toggle.is-revealed .login-password-toggle__icon--hide {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Edge 自带的眼睛与自定义按钮位置重叠 */
+.login-field input::-ms-reveal,
+.login-field input::-ms-clear {
     display: none;
 }
 
-.login-btn-loading .login-btn-status {
-    display: inline-flex !important;
+/* Caps Lock 提示 */
+.login-caps-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.4rem 0 0;
+    padding-left: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--app-orange);
+    animation: login-alert-in var(--login-motion-base) var(--login-motion-ease) backwards;
+}
+
+.login-caps-hint[hidden] {
+    display: none;
+}
+
+/* 提交按钮：三层状态叠放在同一网格单元，切换时不改变高度 */
+.login-submit {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    min-height: 2.875rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--app-radius-btn);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    animation: login-fade-in 0.58s var(--login-motion-ease) 900ms both;
+    transition: background-color var(--login-motion-slow) var(--login-motion-ease-emphasis),
+        border-color var(--login-motion-slow) var(--login-motion-ease-emphasis),
+        transform var(--login-motion-base) var(--login-motion-ease-emphasis);
+}
+
+.login-submit:disabled {
+    opacity: 1;
+}
+
+.login-submit__layer {
+    grid-area: 1 / 1;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity var(--login-motion-slow) var(--login-motion-ease),
+        transform var(--login-motion-slow) var(--login-motion-ease),
+        visibility 0s linear var(--login-motion-slow);
+}
+
+.login-submit .login-text {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity var(--login-motion-slow) var(--login-motion-ease),
+        transform var(--login-motion-slow) var(--login-motion-ease),
+        visibility 0s linear 0s;
+}
+
+.login-submit .login-submit__status,
+.login-submit .login-submit__success {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(0.2rem) scale(0.985);
+}
+
+.login-submit[data-state="loading"] {
+    cursor: progress;
+}
+
+.login-submit[data-state="loading"] .login-text {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-0.2rem) scale(0.985);
+}
+
+.login-submit[data-state="loading"] .login-submit__status {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity var(--login-motion-slow) var(--login-motion-ease),
+        transform var(--login-motion-slow) var(--login-motion-ease),
+        visibility 0s linear 0s;
+}
+
+/* 成功态：loading 快速退场，success 略滞后入场，避免双层叠字 */
+.login-submit[data-state="success"] .login-text {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-0.2rem) scale(0.985);
+}
+
+.login-submit[data-state="success"] .login-submit__status {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-0.14rem) scale(0.99);
+    transition: opacity 0.14s linear,
+        transform 0.14s linear,
+        visibility 0s linear 0.14s;
+}
+
+.login-submit[data-state="success"] .login-submit__success {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity var(--login-motion-slow) var(--login-motion-ease-emphasis) 0.1s,
+        transform var(--login-motion-slow) var(--login-motion-ease-emphasis) 0.1s,
+        visibility 0s linear 0.1s;
+}
+
+.login-submit[data-state="success"] {
+    background: var(--app-green) !important;
+    border-color: transparent !important;
+    transform: scale(1.012);
+}
+
+.login-body--exit-prep .login-submit[data-state="success"] {
+    transform: scale(1.018);
+    box-shadow:
+        0 10px 34px rgba(var(--app-green-rgb), 0.34),
+        0 0 0 1px rgba(var(--app-green-rgb), 0.14);
+    transition: transform var(--login-motion-slow) var(--login-motion-ease-emphasis),
+        box-shadow var(--login-motion-slow) var(--login-motion-ease-exit),
+        background-color var(--login-motion-slow) var(--login-motion-ease-emphasis);
+}
+
+.login-submit[data-state="success"]:hover {
+    background: var(--app-green-hover) !important;
+}
+
+/* 登录成功：先收表单注意力，再整页淡出（见 auth.js 时间线） */
+.login-body--exit-prep .login-head,
+.login-body--exit-prep .login-field,
+.login-body--exit-prep .login-alert-slot {
+    opacity: 0.34;
+    filter: blur(2px);
+    transition: opacity var(--login-motion-base) var(--login-motion-ease-exit),
+        filter var(--login-motion-base) var(--login-motion-ease-exit);
+    pointer-events: none;
+}
+
+.login-body--exit-prep .login-head {
+    transition-delay: 0ms;
+}
+
+.login-body--exit-prep .login-field:nth-of-type(1) {
+    transition-delay: 40ms;
+}
+
+.login-body--exit-prep .login-field:nth-of-type(2) {
+    transition-delay: 80ms;
+}
+
+.login-body--exit-prep .login-alert-slot {
+    transition-delay: 55ms;
+}
+
+.login-body--exit-prep .login-card {
+    box-shadow: var(--app-shadow-elevated),
+        0 16px 48px rgba(var(--app-primary-rgb), 0.1);
+    transition: box-shadow var(--login-motion-slow) var(--login-motion-ease-exit);
+}
+
+.login-body--leaving {
+    overflow: hidden;
+}
+
+.login-body--leaving .login-page {
+    pointer-events: none;
+}
+
+.login-body--leaving .login-page::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--app-bg);
+    opacity: 0;
+    animation: login-exit-scrim var(--login-motion-exit) var(--login-motion-ease-exit) 110ms forwards;
+}
+
+[data-theme="dark"] .login-body--leaving .login-page::after {
+    background: #12131a;
+}
+
+.login-body--leaving .login-page__glow {
+    opacity: 0;
+    transition-duration: calc(var(--login-motion-exit) * 0.82);
+    transition-delay: 0ms;
+}
+
+.login-body--leaving .login-page__inner {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.972);
+    filter: blur(5px);
+    will-change: opacity, transform, filter;
+    transition-delay: 90ms, 90ms, 130ms;
+}
+
+/*
+ * 登录后进首页：只延长 dashboard 默认 app-fade-up 的错峰，不再叠第二套 opacity 动画。
+ * data-nav=quiet 已在 base 首屏脚本里压住侧栏重播。
+ */
+html.js-login-arriving main.app-main > * {
+    animation-duration: 0.5s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(2) {
+    animation-delay: 0.17s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(3) {
+    animation-delay: 0.24s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(4) {
+    animation-delay: 0.31s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(5) {
+    animation-delay: 0.38s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(6) {
+    animation-delay: 0.44s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(7) {
+    animation-delay: 0.5s;
+}
+
+html.js-login-arriving main.app-main > *:nth-child(8) {
+    animation-delay: 0.56s;
+}
+
+/* PC 端略放宽卡片，移动端仍顶满内容区 */
+@media (min-width: 768px) {
+    .login-page__inner,
+    .login-card {
+        max-width: 27.5rem;
+    }
+
+    .login-card__body {
+        padding: 2.2rem 2.35rem 2.05rem;
+    }
+
+    .login-brand {
+        gap: 0.75rem;
+        margin-bottom: 1.1rem;
+    }
+
+    .login-brand__mark {
+        width: 44px;
+        height: 44px;
+    }
+
+    .login-brand__wordmark {
+        height: 22px;
+        max-width: 14.5rem;
+    }
+
+    .login-title {
+        font-size: 1.45rem;
+    }
+
+    .login-head {
+        margin-bottom: 1.75rem;
+    }
 }
 
 /* 登录页面响应式调整 */
 @media (max-width: 576px) {
+    .login-page {
+        align-items: center;
+        padding: max(1.5rem, env(safe-area-inset-top)) 1rem
+            max(1.5rem, env(safe-area-inset-bottom));
+    }
+
+    .login-page__inner,
     .login-card {
         max-width: 100%;
-        margin: 0;
     }
 
-    .login-logo {
-        max-height: 50px;
-        max-width: 90%;
+    .login-card__body {
+        padding: 1.65rem 1.35rem 1.5rem;
     }
 
-    .login-card .card-body {
-        padding: 1.5rem !important;
+    .login-brand__mark {
+        width: 36px;
+        height: 36px;
+    }
+
+    .login-brand__wordmark {
+        height: 16px;
     }
 }
 
 @media (max-width: 480px) {
-    .login-logo {
-        max-height: 45px;
-        max-width: 85%;
-    }
-
-    .login-card .card-body {
-        padding: 1.25rem !important;
+    .login-card__body {
+        padding: 1.45rem 1.2rem 1.35rem;
     }
 }
 
 @media (max-width: 360px) {
-    .login-logo {
-        max-height: 40px;
-        max-width: 80%;
+    .login-card__body {
+        padding: 1.25rem 1rem 1.2rem;
     }
 
-    .login-card .card-body {
-        padding: 1rem !important;
+    .login-brand {
+        gap: 0.5rem;
     }
-}
 
-/* 登录页面 */
-.login-alert {
-    border-radius: 0.5rem;
-    border: none;
-    transition: all 0.3s ease;
-}
+    .login-brand__mark {
+        width: 32px;
+        height: 32px;
+    }
 
-.login-form .btn-primary {
-    transition: all 0.3s ease;
-}
-
-.login-form .btn-primary:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(var(--app-primary-rgb), 0.3);
-}
-
-.login-form .btn-primary:disabled {
-    opacity: 0.6;
-    transform: none;
-    box-shadow: none;
+    .login-brand__wordmark {
+        height: 14px;
+    }
 }
 
 /* ========== 配置页面专用样式 ========== */
@@ -1590,6 +2198,39 @@ pre {
 .config-form .form-check-input:checked {
     background-color: var(--app-primary);
     border-color: var(--app-primary);
+}
+
+/* Bangumi 账号卡片：三个输入框与「仅自己可见」开关同排。
+   宽屏一行放四个；窄一档改成两列，开关正好落在「访问令牌」右侧，
+   不会像纯换行那样单独占一行 */
+.bangumi-account-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: 0.5rem;
+}
+
+.bangumi-account-field {
+    min-width: 0;
+}
+
+/* 开关和输入框一样是「标签 + 控件」两行，控件与输入框等高并上下居中：
+   0.9rem × 1.5 行高 + 上下 0.5625rem 内边距 + 上下各 1px 边框 */
+.bangumi-account-field--switch .form-check {
+    min-height: calc(0.9rem * 1.5 + 1.125rem + 2px);
+    margin-bottom: 0;
+}
+
+@media (max-width: 1199.98px) {
+    .bangumi-account-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767.98px) {
+    .bangumi-account-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 /* 配置页面按钮组样式 */

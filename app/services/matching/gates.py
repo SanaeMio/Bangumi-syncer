@@ -130,7 +130,7 @@ def _exact_search_hit(ctx: Any, prev: Any = None) -> bool:
 
 EXACT_SEARCH_HIT = Gate(
     name="exact_search_hit",
-    describe="精确搜索已命中，跳过兜底",
+    describe="精确搜索已找到结果，跳过兜底搜索",
     check=_exact_search_hit,
 )
 
@@ -142,7 +142,7 @@ def _episode_already_resolved(ctx: Any, prev: Any = None) -> bool:
 
 EPISODE_ALREADY_RESOLVED = Gate(
     name="episode_already_resolved",
-    describe="集数解析已命中，无需跨季回退",
+    describe="集数已解析，无需跨季查找",
     check=_episode_already_resolved,
 )
 
@@ -159,7 +159,7 @@ def _movie_subject_marked(ctx: Any, prev: Any = None) -> bool:
 
 MOVIE_SUBJECT_MARKED = Gate(
     name="movie_subject_marked",
-    describe="剧场版正片只标条目在看，无需跨季回退",
+    describe="剧场版只需标记条目在看，无需跨季查找",
     check=_movie_subject_marked,
 )
 

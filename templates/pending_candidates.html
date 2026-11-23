@@ -119,6 +119,9 @@
     {% include "_mapping_modal.html" %}
 {% endblock %}
 {% block scripts %}
+    <script src="{{ '/static/js/table-utils.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/mapping-modal.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/agent-run-steps.js' | static_v }}"></script>
     <script>
 let currentPage = 1;
 const pageLimit = APP_TABLE_PAGE_SIZE;

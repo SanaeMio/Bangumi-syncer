@@ -269,6 +269,8 @@
     </div>
 {% endblock %}
 {% block scripts %}
+    <script defer src="{{ '/static/js/table-utils.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/mapping-modal.js' | static_v }}"></script>
     <script>
 let currentMappings = {};
 let currentRules = [];

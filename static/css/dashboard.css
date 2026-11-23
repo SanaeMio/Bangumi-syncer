@@ -89,9 +89,7 @@ main.app-main>*:nth-child(12) {
 }
 
 /* 侧栏 Logo */
-.sidebar .text-center.mb-4 img {
-    animation: app-fade-in 0.55s ease 0.05s backwards;
-}
+/* 侧栏品牌图标的淡入写在 theme-base.css（两态共用同一图标） */
 
 /* 侧栏菜单项错峰 */
 .sidebar .nav.flex-column>.nav-item>.nav-link {
@@ -377,7 +375,7 @@ main.app-main>*:nth-child(12) {
 }
 
 .theme-color-item[data-color="sakura"] .theme-color-dot {
-    --theme-dot-color: #f09199;
+    --theme-dot-color: #f3a2a8;
 }
 
 .theme-color-item[data-color="amber"] .theme-color-dot {
@@ -414,7 +412,7 @@ main.app-main>*:nth-child(12) {
     padding: 0.5rem 0;
     display: flex;
     justify-content: center;
-    overflow: hidden;
+    overflow-x: auto;
 }
 
 .heatmap-grid {
@@ -516,7 +514,7 @@ main.app-main>*:nth-child(12) {
 }
 
 .heatmap-animate .heatmap-cell {
-    animation: heatmap-cell-in 0.2s ease-out backwards;
+    animation: heatmap-cell-in 0.2s var(--app-ease-smooth) backwards;
 }
 
 /* ========== 同步时间线 ========== */
@@ -958,7 +956,7 @@ main.app-main>*:nth-child(12) {
 @keyframes tl-enter {
     from {
         opacity: 0;
-        transform: translateY(14px);
+        transform: translateY(8px);
     }
 
     to {
@@ -969,12 +967,12 @@ main.app-main>*:nth-child(12) {
 
 .tl-track::before {
     transform-origin: top;
-    animation: tl-enter 0.5s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
 }
 
 .tl-item {
     will-change: opacity, transform;
-    animation: tl-enter 0.4s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
 }
 
 .tl-item:nth-child(1) {
@@ -1002,12 +1000,12 @@ main.app-main>*:nth-child(12) {
 }
 
 .tl-dot {
-    animation: tl-enter 0.3s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
     animation-delay: inherit;
 }
 
 .tl-msg {
-    animation: tl-enter 0.3s var(--app-ease-smooth) backwards;
+    animation: tl-enter var(--app-duration-enter) var(--app-ease-smooth) backwards;
     animation-delay: 0.2s;
 }
 
@@ -1036,6 +1034,52 @@ main.app-main>*:nth-child(12) {
     }
 }
 
+/* ========== 实时更新动效 ========== */
+
+/* 统计数字变化时轻弹一下（由 dashboard.js 的 applyDashboardPayload 触发） */
+.stats-value--updated {
+    animation: stats-value-bump 0.55s var(--app-ease-smooth);
+}
+
+@keyframes stats-value-bump {
+    0% {
+        transform: scale(1);
+    }
+
+    35% {
+        transform: scale(1.035);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* 实时插入的新条目：除了原有的入场动画，再叠一层淡出高亮 */
+.tl-item--new {
+    position: relative;
+}
+
+.tl-item--new::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--app-radius-card-sm);
+    background: rgba(var(--app-primary-rgb), 0.12);
+    pointer-events: none;
+    animation: tl-item-highlight 2s var(--app-ease-smooth) forwards;
+}
+
+@keyframes tl-item-highlight {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto !important;
@@ -1055,11 +1099,15 @@ main.app-main>*:nth-child(12) {
     .navbar.navbar-expand-md.d-md-none .navbar-brand img,
     .login-card,
     .login-logo,
+    .login-brand,
     .heatmap-cell,
     .tl-item,
     .tl-dot,
     .tl-msg,
     .tl-track::before,
+    .stats-value--updated,
+    .tl-item--new::after,
+    .dashboard-edit-hint,
     #records-table tbody tr.records-table-row--enter,
     .records-table-wrap tbody tr.records-table-row--enter,
     .records-table-wrap.records-table-wrap--enter .app-data-table,
@@ -1070,6 +1118,7 @@ main.app-main>*:nth-child(12) {
     .card,
     .stats-card,
     .stats-icon,
+    .dashboard-grid__item,
     .btn,
     .btn-close,
     .form-control,
@@ -1092,13 +1141,13 @@ main.app-main>*:nth-child(12) {
     .card:hover .stats-icon,
     .badge:hover,
     .navbar-nav .nav-link:hover,
-    .app-sidebar-brand-link:hover,
+    .sidebar-brand__link:hover,
     .tl-item:hover,
     .tl-item:hover .timeline-poster {
         transform: none !important;
     }
 
-    .app-sidebar-brand-link {
+    .sidebar-brand__link {
         transition: none !important;
     }
 
@@ -1341,10 +1390,10 @@ main.app-main>*:nth-child(12) {
 @media (max-width: 767.98px) {
     main.app-main>.d-flex:has(.header-theme-switcher) {
         display: grid !important;
-        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        grid-template-columns: minmax(0, 1fr) auto auto auto auto;
         grid-template-areas:
-            "pageTitle chipTheme chipColor chipInbox"
-            "pageVersion pageVersion pageVersion pageVersion";
+            "pageTitle chipCustom chipTheme chipColor chipInbox"
+            "pageVersion pageVersion pageVersion pageVersion pageVersion";
         gap: 0.625rem 0.375rem;
         align-items: center;
         padding-top: 0.5rem !important;
@@ -1384,6 +1433,21 @@ main.app-main>*:nth-child(12) {
 
     .btn-toolbar:has(.header-theme-switcher) .header-theme-palette-wrap {
         grid-area: chipColor;
+    }
+
+    .btn-toolbar:has(.header-theme-switcher) #dashboardCustomizeBtn {
+        grid-area: chipCustom;
+    }
+
+    .btn-toolbar:has(.header-theme-switcher) #dashboardManageCardsBtn {
+        grid-area: chipManage;
+    }
+
+    body.is-dashboard-editing main.app-main>.d-flex:has(.header-theme-switcher) {
+        grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+        grid-template-areas:
+            "pageTitle chipCustom chipManage chipTheme chipColor chipInbox"
+            "pageVersion pageVersion pageVersion pageVersion pageVersion pageVersion";
     }
 
     .btn-toolbar:has(.header-theme-switcher) .inbox-dropdown {
@@ -1472,6 +1536,19 @@ main.app-main>*:nth-child(12) {
     font-weight: 600;
     background: transparent;
     border-bottom: 2px solid var(--app-primary, #f09199);
+}
+
+.inbox-tabs__count {
+    display: inline-block;
+    margin-left: 0.3rem;
+    padding: 0.08em 0.42em;
+    border-radius: 999px;
+    background: var(--app-primary, #f09199);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.25;
+    vertical-align: 0.06em;
 }
 
 .inbox-read-all-btn {
@@ -1849,6 +1926,460 @@ main.app-main>*:nth-child(12) {
 
     .airing-list__title {
         font-size: 0.82rem;
+    }
+}
+
+/* ========== 仪表盘卡片网格（app/core/dashboard_registry.py） ========== */
+
+/* ========== 仪表盘卡片网格（app/core/dashboard_registry.py + static/js/dashboard-cards.js） ==========
+
+   12 栏自由布局：横向以列计、纵向以像素计，卡片可拖动换位、拖右下角改尺寸。
+   位置由 --dg-x/--dg-y/--dg-w/--dg-h 四个自定义属性描述：服务端先给出默认值
+   （无 JS 也能正确落位），前端只负责改写这四个属性。 */
+
+.dashboard-grid {
+    --dg-gap: 24px;
+    --dg-cols: 12;
+    --dg-height: 0px;
+    position: relative;
+    height: var(--dg-height);
+    margin-bottom: 1.5rem;
+    transition: height 0.24s var(--app-ease-smooth);
+}
+
+.dashboard-grid__item {
+    position: absolute;
+    top: var(--dg-y, 0);
+    left: calc(var(--dg-x, 0) * (100% + var(--dg-gap)) / var(--dg-cols));
+    width: calc(
+        var(--dg-w, 3) * (100% + var(--dg-gap)) / var(--dg-cols) - var(--dg-gap)
+    );
+    height: var(--dg-h, 128px);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    outline: 1px dashed transparent;
+    outline-offset: 2px;
+    transition: top 0.24s var(--app-ease-smooth), left 0.24s var(--app-ease-smooth),
+        width 0.24s var(--app-ease-smooth), height 0.24s var(--app-ease-smooth),
+        outline-color var(--app-duration-fast) linear;
+}
+
+/* 被拖 / 拉的卡片跟手；拉伸时盖住邻居，松手后再让位 */
+.dashboard-grid__item.is-dragging,
+.dashboard-grid__item.is-resizing {
+    z-index: 20;
+    transition: none;
+}
+
+.dashboard-grid:has(.is-resizing) .dashboard-grid__item {
+    transition: none;
+}
+
+.dashboard-grid__item.is-dragging {
+    opacity: 0.94;
+    cursor: grabbing;
+}
+
+.dashboard-grid__item.is-dragging > .dashboard-card__body > .card {
+    box-shadow: var(--app-shadow-elevated);
+}
+
+/* 卡片本体撑满栅格单元：白底跟着 --dg-h 走，左右列底边才齐 */
+.dashboard-card__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    height: 100%;
+}
+
+.dashboard-grid__item > .dashboard-card__body > .card {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.dashboard-grid__item .card-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* 卡片标题栏在编辑态才是拖动把手，平时只是标题（也避免误拖） */
+.dashboard-grid__item .card-header {
+    padding-right: 2.5rem;
+    user-select: none;
+}
+
+body.is-dashboard-editing .dashboard-grid__item .card-header {
+    cursor: grab;
+}
+
+body.is-dashboard-editing .dashboard-grid__item.is-dragging .card-header {
+    cursor: grabbing;
+}
+
+/* 编辑态：虚线框提示「这些卡可以摆弄」，退出后恢复原样（短 fade，不位移） */
+body.is-dashboard-editing .dashboard-grid__item:not(.d-none) {
+    outline-color: rgba(var(--app-primary-rgb), 0.45);
+    border-radius: var(--app-radius-card, 0.75rem);
+}
+
+body.is-dashboard-editing .dashboard-grid__item.is-dragging,
+body.is-dashboard-editing .dashboard-grid__item.is-resizing {
+    outline-style: solid;
+    outline-color: rgba(var(--app-primary-rgb), 0.7);
+}
+
+/* 高度由栅格决定的卡片：内容超出时内部滚动，而不是把卡片撑破 */
+.dashboard-grid__item .sync-timeline,
+.dashboard-grid__item .heatmap-container {
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.dashboard-grid__item .sync-timeline {
+    flex: 1 1 auto;
+}
+
+.dashboard-grid__item .chart-area {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* 热力图高度固定但格子尺寸不变：剩余空间留在上下两侧，看起来才是居中 */
+.dashboard-grid__item .heatmap-card .card-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* 放送清单同理：高度跟随栅格，清单在卡片内部滚动 */
+.dashboard-grid__item #airing-calendar-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* 拖动把手（悬停显现，键盘用户不参与拖拽） */
+.dashboard-card__chrome {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    z-index: 3;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s linear;
+}
+
+body.is-dashboard-editing .dashboard-card__chrome,
+.dashboard-grid__item.is-dragging .dashboard-card__chrome {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.dashboard-card__grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 1px solid var(--app-border, #e9ecef);
+    border-radius: 50%;
+    background: var(--app-bg-card);
+    color: var(--app-text-muted);
+    font-size: 0.75rem;
+    cursor: grab;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    transition: color var(--app-ease-smooth), border-color var(--app-ease-smooth);
+}
+
+.dashboard-card__grip:hover {
+    color: var(--app-primary);
+    border-color: rgba(var(--app-primary-rgb), 0.4);
+}
+
+/* 尺寸把手（右下角） */
+.dashboard-card__resize {
+    position: absolute;
+    right: 0.2rem;
+    bottom: 0.2rem;
+    z-index: 3;
+    width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: nwse-resize;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s linear;
+}
+
+body.is-dashboard-editing .dashboard-card__resize,
+.dashboard-grid__item.is-resizing .dashboard-card__resize {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.dashboard-card__resize::after {
+    content: "";
+    position: absolute;
+    right: 0.25rem;
+    bottom: 0.25rem;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 2px solid var(--app-text-muted);
+    border-bottom: 2px solid var(--app-text-muted);
+    border-bottom-right-radius: 3px;
+    opacity: 0.6;
+}
+
+/* 拖动时显示的目标占位框 */
+.dashboard-grid__placeholder {
+    position: absolute;
+    z-index: 1;
+    border-radius: var(--app-radius-card, 24px);
+    border: 2px dashed rgba(var(--app-primary-rgb), 0.45);
+    background: rgba(var(--app-primary-rgb), 0.06);
+    pointer-events: none;
+    transition: top 0.16s var(--app-ease-smooth), left 0.16s var(--app-ease-smooth),
+        width 0.16s var(--app-ease-smooth), height 0.16s var(--app-ease-smooth);
+}
+
+/* 编辑态操作说明：默认隐藏，body.is-dashboard-editing 时短 fade 出现 */
+.dashboard-edit-hint {
+    display: none;
+    margin: 0 0 1rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: var(--app-radius-card-sm);
+    background: rgba(var(--app-primary-rgb), 0.08);
+    border: 1px solid rgba(var(--app-primary-rgb), 0.18);
+    color: var(--app-text);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+body.is-dashboard-editing .dashboard-edit-hint {
+    display: block;
+    animation: app-fade-in var(--app-duration-fast) var(--app-ease-smooth);
+}
+
+.dashboard-edit-hint__mobile {
+    display: none;
+}
+
+/* 窄屏（含平板竖屏）：统计卡两列，活动 / LLM 卡通栏；禁用拖动 / 拉伸 */
+@media (max-width: 991.98px) {
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        height: auto;
+    }
+
+    .dashboard-grid__item {
+        position: static;
+        width: auto;
+        height: auto;
+        margin-bottom: 0;
+        transition: none;
+    }
+
+    .dashboard-card__body,
+    .dashboard-grid__item > .dashboard-card__body > .card {
+        height: auto;
+    }
+
+    .dashboard-grid__item[data-card-group="activity"],
+    .dashboard-grid__item[data-card-group="llm"] {
+        grid-column: 1 / -1;
+    }
+
+    .dashboard-card__chrome,
+    .dashboard-card__resize,
+    .dashboard-grid__placeholder {
+        display: none;
+    }
+
+    .dashboard-grid__item .sync-timeline,
+    .dashboard-grid__item .heatmap-container {
+        overflow-x: auto;
+        overflow-y: visible;
+        max-height: none;
+        height: auto;
+    }
+
+    .dashboard-edit-hint__desktop {
+        display: none;
+    }
+
+    .dashboard-edit-hint__mobile {
+        display: block;
+    }
+}
+
+/* ========== 仪表盘卡片自定义弹窗（static/js/dashboard-cards.js） ========== */
+
+.dashboard-customize__content {
+    border-radius: var(--app-radius-card, 24px);
+    border: 1px solid var(--app-border, #e9ecef);
+    background: var(--app-bg-card);
+    box-shadow: var(--app-shadow-elevated);
+}
+
+.dashboard-customize__header {
+    align-items: flex-start;
+    padding: 1rem 1.15rem 0.85rem;
+    border-bottom: 1px solid var(--app-border, #e9ecef);
+}
+
+/* 顶栏「自定义」按钮在编辑态高亮：画在胶囊 __track 上，避免外层矩形漏色 */
+.inbox-header-chip.is-active .inbox-header-chip__track {
+    border-color: rgba(var(--app-primary-rgb), 0.55);
+    background: rgba(var(--app-primary-rgb), 0.12);
+    color: var(--app-primary);
+}
+
+.dashboard-customize__head {
+    flex: 1;
+    min-width: 0;
+    padding-right: 0.5rem;
+}
+
+.dashboard-customize__title {
+    margin-bottom: 0.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.dashboard-customize__hint {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__body {
+    padding: 0.75rem 1.15rem;
+}
+
+.dashboard-customize__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.dashboard-customize__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--app-radius-card-sm, 16px);
+    border: 1px solid transparent;
+    transition: background var(--app-ease-smooth), border-color var(--app-ease-smooth);
+}
+
+.dashboard-customize__row:hover {
+    background: rgba(var(--app-primary-rgb), 0.06);
+    border-color: var(--app-border, #e9ecef);
+}
+
+.dashboard-customize__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.dashboard-customize__name {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.dashboard-customize__desc {
+    margin-top: 0.15rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.dashboard-customize__group {
+    margin: 0.55rem 0 0.2rem;
+    padding-left: 0.7rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__group:first-child {
+    margin-top: 0;
+}
+
+.dashboard-customize__row--off .dashboard-customize__name {
+    color: var(--app-text-muted);
+}
+
+/* LLM 未配置：卡片仍列出，但开关禁用 */
+.dashboard-customize__row--locked .dashboard-customize__name {
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__row--locked .dashboard-customize__desc {
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__row--locked .form-check-input {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.dashboard-customize__switch .form-check-input {
+    margin: 0;
+    cursor: pointer;
+}
+
+.dashboard-customize__footer {
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 1.15rem 0.75rem;
+    border-top: 1px solid var(--app-border, #e9ecef);
+}
+
+.dashboard-customize__reset,
+.dashboard-customize__done {
+    min-width: 5.5rem;
+    padding: 0.3rem 1.1rem;
+    font-size: 0.82rem;
+    border-radius: var(--app-radius-pill, 999px);
+}
+
+@media (max-width: 575.98px) {
+    .dashboard-customize__row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.45rem;
+    }
+
+    .dashboard-customize__actions {
+        justify-content: flex-end;
     }
 }
 

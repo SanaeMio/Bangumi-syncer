@@ -142,7 +142,12 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
             if self.data_url != old_data_url:
                 # 缓存文件有效性检查只看 mtime+TTL，改数据源 URL 需强制重下
                 self._force_redownload = True
-        logger.info("bangumi-data 已按最新配置刷新")
+            logger.info(
+                "bangumi-data 已按最新配置刷新（数据源/缓存配置变更，内存缓存已清空）"
+            )
+        else:
+            # 无关配置变更只重读字段，不打 INFO 日志（保存配置会触发一次回调）
+            logger.debug("bangumi-data 配置已重读（专属配置未变化，缓存保留）")
 
 
 # 全局 bangumi_data 实例

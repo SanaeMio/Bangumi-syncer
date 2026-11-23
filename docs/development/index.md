@@ -23,6 +23,7 @@ order: 100
 | [🧪 LLM 匹配 Eval 方案](./eval)         | 两层评测（离线回放进 CI + 真实模型 eval）、cassette 与 judge |
 | [📦 开发环境](./environment)            | uv 安装、代码风格、依赖管理、文档协作                         |
 | [🧩 新驱动接入指南](./new-driver-guide) | 从零开始接入新媒体服务器的完整流程                            |
+| [🧱 仪表盘卡片接入指南](./dashboard-cards) | 卡片注册表、12 栏自由布局、插件注册自定义卡片             |
 | [📝 贡献指南](./contributing)           | 开发环境搭建、提交前自检、pre-commit 钩子                     |
 
 ---
