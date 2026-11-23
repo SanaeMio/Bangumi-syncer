@@ -652,6 +652,21 @@ class TestConfigConsoleErrors:
         assert "/static/favicon.ico" in login
         assert _LOGO_LINK_AS_ICON not in login
 
+    def test_login_page_exposes_password_toggle_and_inline_feedback(self):
+        """登录页自带密码显隐、内联校验与 Caps Lock 提示，不依赖浏览器气泡。"""
+        login = (_REPO_ROOT / "templates/login.html").read_text(encoding="utf-8")
+        assert 'id="togglePasswordVisibility"' in login
+        assert 'aria-pressed="false"' in login
+        assert 'id="capsLockHint"' in login
+        assert 'id="username-feedback"' in login
+        assert 'id="password-feedback"' in login
+        # 关闭原生校验气泡，改由内联反馈接管
+        assert '<form id="loginForm" class="login-form" novalidate>' in login
+        # 三层按钮状态叠放，无需切换 display 造成高度跳动
+        for state in ("login-text", "login-submit__status", "login-submit__success"):
+            assert state in login
+        assert 'id="loginStatus"' in login
+
     def test_release_notes_render_deferred_until_open(self):
         """发行说明正文延迟到打开弹窗时渲染，页面加载阶段不注入图片。"""
         js = (_REPO_ROOT / "static/js/version-release.js").read_text(encoding="utf-8")

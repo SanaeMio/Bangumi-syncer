@@ -17,7 +17,13 @@
             document.documentElement.setAttribute('data-sidebar',sb==='collapsed'?'collapsed':'expanded');
             // 站内跳转时侧栏不再重播入场动画，只有右侧内容重新入场
             try{
-                if(sessionStorage.getItem('app-nav')) document.documentElement.setAttribute('data-nav','quiet');
+                if(sessionStorage.getItem('app-login-arriving')){
+                    document.documentElement.classList.add('js-login-arriving');
+                    document.documentElement.setAttribute('data-nav','quiet');
+                    sessionStorage.removeItem('app-login-arriving');
+                } else if(sessionStorage.getItem('app-nav')) {
+                    document.documentElement.setAttribute('data-nav','quiet');
+                }
                 sessionStorage.setItem('app-nav','1');
             }catch(e){}
         })();

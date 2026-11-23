@@ -756,6 +756,44 @@ class TestPageScriptLoading:
         assert all("defer" in tag for tag, _ in scripts)
 
 
+class TestLoginPageDesignContract:
+    """登录页：复用全站设计 token，动效可被 reduced-motion 完全关闭。"""
+
+    def test_login_card_uses_shared_design_tokens(self):
+        """卡片圆角与阴影来自主题变量，不再在页面里写死像素值。"""
+        block = _block(_css("pages.css"), ".login-card")
+        assert "var(--app-radius-card)" in block
+        assert "var(--app-shadow-elevated)" in block
+        assert "24px" not in block
+
+    def test_login_page_animation_disabled_for_reduced_motion(self):
+        """入场、告警展开与按钮状态切换在减少动效时全部停止。"""
+        reduced = _last_media_block(
+            _css("effects.css"), "(prefers-reduced-motion: reduce)"
+        )
+        assert ".login-page__glow {" in reduced
+        assert ".login-card," in reduced
+        assert ".login-submit__layer," in reduced
+        assert ".login-alert-slot," in reduced
+        assert ".login-password-toggle__icon," in reduced
+
+    def test_login_mobile_glow_animation_is_off(self):
+        """窄屏下光晕静止，避免低端机持续重绘。"""
+        mobile = _last_media_block(_css("effects.css"), "(max-width: 767.98px)")
+        assert ".login-page__glow {" in mobile
+
+    def test_login_password_toggle_is_stacked_crossfade(self):
+        """显隐图标用两枚绝对定位图标交叉淡出，而非换 class 闪切。"""
+        css = _css("pages.css")
+        block = _block(css, ".login-password-toggle__icon")
+        assert "position: absolute" in block
+        assert "transition: opacity" in block
+        assert (
+            ".login-password-toggle.is-revealed .login-password-toggle__icon--hide"
+            in css
+        )
+
+
 class TestSidebarNavSlider:
     """侧栏导航：选中态滑块从旧条目滑到新条目。"""
 

@@ -34,8 +34,8 @@ def test_login_wrong_password(page, base_url: str):
     page.fill("#password", "wrong_password")
     page.click("#loginBtn")
 
-    # 等待错误提示出现（alert-container 内的提示）
-    page.wait_for_timeout(2000)
+    # 等待告警条出现（内联告警，role=alert 便于读屏与定位）
+    page.wait_for_selector('#alert-container .login-alert[role="alert"]', timeout=10000)
 
     # 仍在登录页
     assert "/login" in page.url
@@ -51,6 +51,44 @@ def test_login_wrong_password(page, base_url: str):
         }"""
     )
     assert alert_visible, "登录失败未显示错误提示"
+
+    # 失败后密码框被清空并重新获得焦点，便于直接重试
+    assert page.input_value("#password") == ""
+    assert page.evaluate(
+        "() => document.activeElement && document.activeElement.id === 'password'"
+    )
+
+
+def test_login_password_visibility_toggle(page, base_url: str):
+    """密码显隐按钮在密文/明文之间切换，并同步 aria-pressed。"""
+    page.goto(f"{base_url}/login")
+    page.wait_for_load_state("networkidle")
+
+    page.fill("#password", "secret")
+    assert page.get_attribute("#password", "type") == "password"
+    assert page.get_attribute("#togglePasswordVisibility", "aria-pressed") == "false"
+
+    page.click("#togglePasswordVisibility")
+    assert page.get_attribute("#password", "type") == "text"
+    assert page.get_attribute("#togglePasswordVisibility", "aria-pressed") == "true"
+
+    page.click("#togglePasswordVisibility")
+    assert page.get_attribute("#password", "type") == "password"
+    assert page.get_attribute("#togglePasswordVisibility", "aria-pressed") == "false"
+
+
+def test_login_empty_fields_show_inline_feedback(page, base_url: str):
+    """空字段提交时停留在登录页，并显示内联校验提示。"""
+    page.goto(f"{base_url}/login")
+    page.wait_for_load_state("networkidle")
+
+    page.click("#loginBtn")
+    page.wait_for_timeout(300)
+
+    assert "/login" in page.url
+    assert page.is_visible("#username-feedback")
+    assert page.is_visible("#password-feedback")
+    assert page.get_attribute("#username", "aria-invalid") == "true"
 
 
 def test_logout_redirects_to_login(page, base_url: str):

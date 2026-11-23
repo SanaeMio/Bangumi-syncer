@@ -157,11 +157,71 @@
     font-weight: 600;
 }
 
-.login-card {
-    border: 1px solid var(--app-glass-border) !important;
-    border-radius: 24px !important;
-    background: var(--app-bg-card) !important;
-    box-shadow: var(--app-shadow-elevated) !important;
+/* ========== 登录页动效 ========== */
+
+@keyframes login-card-in {
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.966);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 卡片内错峰：轻位移 + 淡入，父级 login-card-in 已承担主位移 */
+@keyframes login-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes login-alert-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes login-field-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--app-red-rgb), 0.28);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0.5rem rgba(var(--app-red-rgb), 0);
+    }
+}
+
+@keyframes login-glow-drift {
+    from {
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    to {
+        transform: translate3d(-1.2%, 1.2%, 0) scale(1.04);
+    }
+}
+
+@keyframes login-exit-scrim {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .auth-standalone-card {
@@ -266,6 +326,10 @@
         animation: none;
     }
 
+    .login-page__glow {
+        animation: none;
+    }
+
     .card,
     .stats-card {
         backdrop-filter: none;
@@ -301,6 +365,44 @@
 
     .app-body::before {
         animation: none;
+    }
+
+    .login-page__glow {
+        animation: none;
+    }
+
+    /* 登录页：入场、告警展开与按钮状态切换全部改为瞬时 */
+    .login-card,
+    .login-brand,
+    .login-title,
+    .login-field:nth-of-type(1),
+    .login-field:nth-of-type(2),
+    .login-submit,
+    .login-alert,
+    .login-caps-hint {
+        animation: none !important;
+    }
+
+    .login-alert-slot,
+    .login-submit__layer,
+    .login-password-toggle__icon,
+    .login-page__inner,
+    .login-page__glow {
+        transition: none !important;
+    }
+
+    .login-body--exit-prep .login-head,
+    .login-body--exit-prep .login-field,
+    .login-body--exit-prep .login-alert-slot,
+    .login-body--leaving .login-page__inner {
+        filter: none;
+        opacity: 1;
+        transform: none;
+    }
+
+    .login-body--leaving .login-page::after {
+        animation: none;
+        opacity: 0;
     }
 
     .header-theme-colors {
